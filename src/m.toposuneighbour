@@ -1,0 +1,678 @@
+#!/bin/bash
+############################################################################
+#
+# MODULE:       m.toposuneighbour
+# AUTHOR(S):    Michael Rabotin (rabotin@supagro.inra.fr)
+# PURPOSE:      Topology Calcul (step 2a : neighbour searching)
+# REQUIREMENTS: m.testtype, m.toposuboundaries, m.toposucentroid, m.toposuchoice,
+#               m.pente2pl
+#
+# COPYRIGHT:    (C) 2009 UMR LISAH - OpenFluid
+#
+#               This program is free software under the GNU General Public
+#               License (>=v2). Read the file COPYING that comes with GRASS
+#               for details.
+#
+#############################################################################
+#%Module
+#%  description: Topology Calcul (step 2a : neighbour searching)
+#%END
+#%flag
+#% key: b
+#% description: neighbouring research with feature boundaries and one contact point ; default (no flag b) is classical (D8 modified) neighbouring research
+#%END
+#%flag
+#% key: s
+#% description: down neighbour choice by slope; default (no flag s) is down neighbour choice by difference altitude 
+#%END
+#%option
+#% key: input
+#% type: string
+#% gisprompt: old,vector,vector
+#% description: Input polygon vector name
+#% key_desc : name
+#% required : yes
+#%END
+#%option
+#% key: output
+#% type: string
+#% gisprompt: old,vector,vector
+#% description: Output polygon vector name
+#% key_desc : name
+#% required : yes
+#%END
+#%option
+#% key: hydro
+#% type: string
+#% gisprompt: old,vector,vector
+#% description: Input line hydrologic vector name
+#% key_desc : name
+#% required : no
+#%END
+#%option
+#% key: hydrop
+#% type: string
+#% gisprompt: old,vector,vector
+#% description: Input point vector name (centroids of HYDRO with x,y,z columns)
+#% key_desc : name
+#% required : no
+#%END
+#%option
+#% key: id
+#% type: string
+#% description: ID INPUT column name
+#% required : yes
+#%END
+#%option
+#% key: idhydro
+#% type: string
+#% description: ID HYDRO column name
+#% required : no
+#%END
+#%option
+#% key: pohydro
+#% type: string
+#% description: Process Order of HYDRO objects column name
+#% required : no
+#%END
+#%option
+#% key: ident
+#% type: double
+#% description: Id of the INPUT feature in treatment (from ID column)
+#% required : yes
+#%END
+#%option
+#% key: step
+#% type: double
+#% description: distance (in meters) between each slope direction inside a SU (boundaries and one contact point topology); needed for flag b
+#% required : no
+#%END
+#%option
+#% key: distreach
+#% type: double
+#% description: distance in meters for a possible contact between a SU and a reach
+#% required : no
+#%END
+#%option
+#% key: dem
+#% type: string
+#% gisprompt: old,cell,raster
+#% description: Input DEM name
+#% key_desc : name
+#% required : no
+#%END
+#%option
+#% key: file
+#% type: string
+#% description: file name for ascii line file (needed for flag -b)
+#% required : no
+#%END
+#%option
+#% key: slop_val
+#% type: double
+#% description: Replacement value for null or negative calculated slope (must be > 0; default value is 0.0001)
+#% required : no
+#%END
+  
+if [ "$1" != "@ARGS_PARSED@" ] ; then
+  exec g.parser "$0" "$@"
+fi
+
+INPUT="$GIS_OPT_INPUT"
+OUTPUT="$GIS_OPT_OUTPUT"
+HYDRO="$GIS_OPT_HYDRO"
+HYDROP="$GIS_OPT_HYDROP"
+DISTFOS="$GIS_OPT_DISTREACH"
+IDHYDRO="$GIS_OPT_IDHYDRO"
+ID="$GIS_OPT_ID"
+POHYDRO="$GIS_OPT_POHYDRO"
+IDENT="$GIS_OPT_IDENT"
+STEP="$GIS_OPT_STEP"
+MNT="$GIS_OPT_DEM"
+FILE="$GIS_OPT_FILE"
+SLOP_VAL="$GIS_OPT_SLOP_VAL"
+ 
+eval `g.gisenv`
+: ${GISDBASE?} ${LOCATION_NAME?} ${MAPSET?}
+
+if  [ -z "$GISBASE" ]
+then
+	echo ""
+	echo "You must start GRASS to launch this program"
+	echo ""
+	exit 2
+fi
+
+
+#GRASS version testing, must be >= 6.3
+
+Gversion1=`g.version |cut -d" " -f2 |cut -d"." -f1`
+Gversion2=`g.version |cut -d" " -f2 |cut -d"." -f2`
+
+if [ $Gversion1 -ge 6 ];then
+	if [ $Gversion1 = 6 ] && [ $Gversion2 -lt 3 ];then 
+		g.message -e message="You must have GRASS version 6.3.0 or higher"
+		exit 2
+	fi
+else
+	g.message -e message="You must have GRASS version 6.3.0 or higher"
+	exit 2
+
+fi
+
+# awk testing 
+if [ ! -x "`which awk`" ];then
+  g.message -e message="awk required, please install awk our gawk first"
+  exit 2
+fi
+
+#perl testing
+if [ ! -x "`which perl`" ];then
+  g.message -e message="perl required, please install perl first"
+  exit 2
+fi
+
+#test driver (dbf only accepted)
+if [ "`db.connect -p|head -n 1 |cut -d":" -f2 `" != "dbf" ]
+then
+	g.message -e message="Sorry, but only dbf driver accepted "
+  exit 2
+fi 
+
+# setting environment, so that awk works properly in all languages
+unset LC_ALL
+LC_NUMERIC=C
+export LC_NUMERIC
+
+# all above OK - proceed: set up temporary files
+TMP="`g.tempfile pid=$$`"
+if [ $? -ne 0 ] || [ -z "$TMP" ] ; then
+    echo "ERROR: Unable to create temporary files." 1>&2
+    exit 2
+fi
+rm -f $TMP
+PROG=`basename $0 | sed 's/\./_/g'`
+NOW=$(date +"%F-%X")
+LOGFILE="$PROG-$NOW.log"
+
+#cleanup procedure
+cleanup()
+{
+  \rm -f $TMP
+   
+   for ((u=1;u<=17;u+=1))
+  do
+    rm -f $TMP.${PROG}.$u
+  done
+
+  g.mremove -f vect="$INPUT"_toposuneighbourtmp* 2>/dev/null
+  if [ -e ~/$LOGFILE ] && [ ! -s ~/$LOGFILE ] ;then
+		rm -f ~/$LOGFILE
+  fi
+  
+}
+
+# what to do in case of user break:
+exitprocedure()
+{
+  echo -e "\nUser break!"
+  cleanup
+  exit 2
+}
+# shell check for user break (signal list: trap -l)
+trap "exitprocedure" 2 3 15
+
+
+
+#dependancies testing
+if [ ! -x "`which m.testtype`" ];then
+  g.message -e message="m.testtype subscript required, please install it first"
+  exit 2
+fi
+
+if [ ! -x "`which m.toposuboundaries`" ];then
+  g.message -e message="m.toposuboundaries subscript required, please install it first"
+  exit 2
+fi
+
+if [ ! -x "`which m.toposucentroid`" ];then
+  g.message -e message="m.toposucentroid subscript required, please install it first"
+  exit 2
+fi
+
+if [ ! -x "`which m.toposuchoice`" ];then
+  g.message -e message="m.toposuchoice subscript required, please install it first"
+  exit 2
+fi
+
+if [ ! -x "`which m.pente2pl`" ];then
+  g.message -e message="m.pente2pl subscript required, please install it first"
+  exit 2
+fi
+
+
+#test if input temporary vector map already exist
+
+g.mlist type=vect pattern="$INPUT"_toposuneighbourtmp*  > $TMP.${PROG}.1
+if [ -s "$TMP.${PROG}.1" ];then
+  g.message -w message="<$INPUT>_toposuneighbourtmp name for temporay vector files is already used in this mapset or in another mapset of this location"
+  cleanup
+  exit 2
+fi
+
+# test if input exists
+g.findfile element=vector mapset=${MAPSET?} file=${INPUT} > /dev/null
+if [ $? -ne 0 ] ; then
+ g.message -e message="<$INPUT> vector doesn't exist !"
+ cleanup
+ exit 2
+fi
+
+m.testtype input=$INPUT > $TMP.${PROG}.2
+
+#if input vector map is not a polygon vector, exit program
+if [ "`cat $TMP.${PROG}.2`" != "polygone" ] ; then
+  g.message -e message="<$INPUT> doesn't exist or isn't a vector polygon !!"
+  cleanup
+  exit 2
+fi
+
+
+
+## test if input exists (specific here because OUTPUT must already exist)
+g.findfile element=vector mapset=${MAPSET?} file=${OUTPUT} > /dev/null
+if [ $? -ne 0 ] ; then
+ g.message -e message="<$OUTPUT> vector doesn't exist !"
+ cleanup
+ exit 2
+fi
+
+
+m.testtype input=$OUTPUT > $TMP.${PROG}.3
+#if output vector map is not a polygon vector, exit program
+if [ "`cat $TMP.${PROG}.3`" != "polygone" ] ; then
+  g.message -e message="<$OUTPUT> doesn't exist or isn't a vector polygon !!"
+  cleanup 
+  exit 2
+fi
+
+
+
+#if flag B, DEM raster security
+if [ $GIS_FLAG_B -eq 1 ]  ;then
+	g.findfile element=cell mapset=${MAPSET?} file=${MNT} > /dev/null
+	if [ $? -ne 0 ] ; then
+		g.message -e message="<$MNT> raster not found !!"
+		cleanup
+		exit 2
+	fi
+fi
+#if flag B , file security
+if [ $GIS_FLAG_B -eq 1 ]  ;then
+  if [ -z "$FILE" ] ;then
+    g.message -e message="<FILE> name is empty !"
+    cleanup
+    exit 2
+  fi
+fi
+
+
+
+
+
+#if  HYDRO vector map exists
+if [ ! -z "$HYDRO" ] ;then
+	#if  HYDRO vector map exists
+  g.findfile element=vector mapset=${MAPSET?} file=${HYDRO} > /dev/null
+  if [ $? -ne 0 ] ; then
+  g.message -e message="<$HYDRO> vector doesn't exist !"
+  cleanup
+  exit 2
+  fi
+  
+  m.testtype input=$HYDRO > $TMP.${PROG}.4
+    #if hydro vector map is not a line vector, exit program
+  if [ "`cat $TMP.${PROG}.4`" != "line" ] ; then
+    g.message -e message="<$HYDRO> doesn't exist or isn't a vector line !!"
+    cleanup
+    exit 2
+  fi
+  
+  
+  
+  #test if HYDROP exists
+  g.findfile element=vector mapset=${MAPSET?} file=${HYDROP} > /dev/null
+  if [ $? -ne 0 ] ; then
+  g.message -e message="<$HYDROP> vector doesn't exist !"
+  cleanup
+  exit 2
+  fi
+  
+  m.testtype input=$HYDROP > $TMP.${PROG}.5
+  
+ #if hydrop vector map is not a point vector, exit program
+  if [ "`cat $TMP.${PROG}.5`" != "point" ] ; then
+    g.message -e message="<$HYDROP> doesn't exist or isn't a vector point !!"
+    cleanup
+    exit 2
+  fi
+
+  #test  IDHYDRO value
+  v.info -c map=$HYDRO --q |cut -d"|" -f2 |grep "^$IDHYDRO$" > $TMP.${PROG}.6
+  if [ ! -s "$TMP.${PROG}.6" ];then
+    g.message -e message="The column <$IDHYDRO> doesn't exist !!"
+    cleanup 
+    exit 2
+  fi
+  
+  if [ "$IDHYDRO" = "cat" ];then
+		g.message -e message="<idhydro> can't be <cat> !!"
+		cleanup
+		exit 2	
+	fi
+  
+  if [ $GIS_FLAG_B -eq 1 ]  ;then
+    # test POHYDRO value
+    v.info -c map=$HYDRO --q |cut -d"|" -f2 |grep "^$POHYDRO$" > $TMP.${PROG}.7
+    if [ ! -s "$TMP.${PROG}.7" ];then
+      g.message -e message="The column <$POHYDRO> doesn't exist !!"
+      cleanup
+      exit 2
+    fi
+    
+  fi
+  
+  if [ ! -z "$DISTFOS" ] ;then
+    # test  DISTFOS value
+    if [ "`echo $DISTFOS |grep "[[:digit:]]" | wc -c`" = "0" ] ;then
+      g.message -e message="<DISTREACH> value isn't numeric !!"
+      cleanup
+      exit 2
+    fi
+	if [ "`echo $DISTFOS |grep "[[:alpha:]]" | wc -c`" != "0" ] ;then
+		g.message -e message="<DISTFOS> value isn't numeric !!"
+		cleanup
+		exit 2
+    fi
+  fi
+fi
+#test  ID value
+v.info -c map=$INPUT --q |cut -d"|" -f2 |grep "^$ID$" > $TMP.${PROG}.8
+if [ ! -s "$TMP.${PROG}.8" ];then
+  g.message -e message="The column <$ID> doesn't exist !!"
+  cleanup
+  exit 2
+fi
+
+if [ "$ID" = "cat" ];then
+		g.message -e message="<id> can't be <cat> !!"
+		cleanup
+		exit 2	
+	fi
+
+# test IDENT value
+if [ "`echo $IDENT |grep "[[:digit:]]" | wc -c`" = "0" ] ;then
+  g.message -e message="<IDENT> value isn't numeric !!"
+  cleanup
+  exit 2
+fi 
+if [ "`echo $IDENT |grep "[[:alpha:]]" | wc -c`" != "0" ] ;then
+	g.message -e message="<IDENT> isn't numeric !!"
+	cleanup
+	exit 2
+fi
+
+#test STEP value
+if [ $GIS_FLAG_B -eq 1 ] ;then
+  if [ "`echo $STEP |grep "[[:digit:]]" | wc -c`" = "0" ] ;then
+    g.message -e message="<STEP> value isn't numeric !!"
+    cleanup
+    exit 2
+  fi
+  if [ "`echo $STEP |grep "[[:alpha:]]" | wc -c`" != "0" ] ;then
+	g.message -e message="<STEP> value isn't numeric !!"
+	cleanup
+	exit 2
+  fi
+fi
+
+# test SLOP_VAL value
+if [ ! -z "$SLOP_VAL" ];then
+	if [ "`echo $SLOP_VAL |grep "[[:digit:]]" | wc -c`" = "0" ] ;then
+	  g.message -e message="<slop_val> value isn't numeric !!"
+	  cleanup
+	  exit 2
+	fi
+	if [ "`echo $SLOP_VAL |grep "[[:alpha:]]" | wc -c`" != "0" ] ;then
+		g.message -e message="<slop_val> value isn't numeric !!"
+		cleanup
+		exit 2
+	fi
+	if [ "$SLOP_VAL" = "0" ];then
+		g.message -e message="<slop_val> must be superior to 0 !!"
+		cleanup
+		exit 2
+	fi
+else
+	SLOP_VAL=0.0001
+fi
+
+#################### securities ending
+
+
+#testing value of  FlowID
+
+v.db.select -c map=$OUTPUT column=FlowID nv="a" layer=1 where="$ID = $IDENT" > $TMP.${PROG}.9 2>>~/$LOGFILE
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+			g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+			cleanup
+			exit 2
+fi
+
+#if $TMP.${PROG}.9 is empty, that means that FLowCode is Null, so we launch the automatic topology calculation
+if [ "`cat $TMP.${PROG}.9`" = "a" ];then
+
+
+  #two possibilities of topology calcul with flag B or without flag B
+  if [ $GIS_FLAG_B -eq 1 ] ;then
+    #calling m.toposuboundaries script
+    if [ $GIS_FLAG_S -eq 1 ] ;then
+      #case with flag s : calculation
+      if [ ! -z "$HYDRO" ] ;then
+        m.toposuboundaries -s input=$INPUT hydro=$HYDRO hydrop=$HYDROP id=$ID idhydro=$IDHYDRO distreach=$DISTFOS ident=$IDENT step=$STEP file=$TMP.${PROG}.10 dem=$MNT pohydro=$POHYDRO file2=$FILE slop_val=$SLOP_VAL 2>>~/$LOGFILE
+      else
+        m.toposuboundaries -s input=$INPUT id=$ID ident=$IDENT step=$STEP file=$TMP.${PROG}.10 dem=$MNT file2=$FILE slop_val=$SLOP_VAL 2>>~/$LOGFILE
+      fi
+			#structure of $TMP.${PROG}.10: FlowCode FlowID
+			#if Nodata: no neighbour found
+    else
+      #case without flag s : altitude difference calculation
+      if [ ! -z "$HYDRO" ] ;then
+        m.toposuboundaries input=$INPUT hydro=$HYDRO hydrop=$HYDROP id=$ID idhydro=$IDHYDRO distreach=$DISTFOS ident=$IDENT step=$STEP file=$TMP.${PROG}.10 dem=$MNT pohydro=$POHYDRO file2=$FILE slop_val=$SLOP_VAL 2>>~/$LOGFILE
+      else
+        m.toposuboundaries input=$INPUT id=$ID ident=$IDENT step=$STEP file=$TMP.${PROG}.10 dem=$MNT file2=$FILE slop_val=$SLOP_VAL 2>>~/$LOGFILE
+      fi
+			#structure of $TMP.${PROG}.10: FlowCode FlowID
+			#if Nodata: no neighbour found
+    fi
+  else
+    #call m.toposucentroid script
+    if [ $GIS_FLAG_S -eq 1 ] ;then
+      #case with flag s :  slope calculation
+      if [ ! -z "$HYDRO" ] ;then
+		if [ ! -z "$DISTFOS" ] ;then
+			m.toposucentroid -s input=$INPUT hydro=$HYDRO id=$ID idhydro=$IDHYDRO distreach=$DISTFOS ident=$IDENT file=$TMP.${PROG}.10 slop_val=$SLOP_VAL 2>>~/$LOGFILE
+		else
+			m.toposucentroid -s input=$INPUT hydro=$HYDRO id=$ID idhydro=$IDHYDRO ident=$IDENT file=$TMP.${PROG}.10 slop_val=$SLOP_VAL 2>>~/$LOGFILE
+		fi
+	
+      else
+        m.toposucentroid -s input=$INPUT id=$ID ident=$IDENT file=$TMP.${PROG}.10 slop_val=$SLOP_VAL 2>>~/$LOGFILE
+      fi
+    else
+      #case without  flag s :   altitude difference calculation
+      if [ ! -z "$HYDRO" ] ;then
+		if [ ! -z "$DISTFOS" ] ;then
+			m.toposucentroid input=$INPUT hydro=$HYDRO id=$ID idhydro=$IDHYDRO distreach=$DISTFOS ident=$IDENT file=$TMP.${PROG}.10 slop_val=$SLOP_VAL 2>>~/$LOGFILE
+		else
+			m.toposucentroid input=$INPUT hydro=$HYDRO id=$ID idhydro=$IDHYDRO ident=$IDENT file=$TMP.${PROG}.10 slop_val=$SLOP_VAL 2>>~/$LOGFILE
+		fi	
+			
+      else
+        
+        m.toposucentroid input=$INPUT id=$ID ident=$IDENT file=$TMP.${PROG}.10 slop_val=$SLOP_VAL 2>>~/$LOGFILE
+        
+      fi
+    fi
+    #structure of $TMP.${PROG}.10: FlowCode FlowID
+		#if Nodata: no neighbour found
+    #if $TMP.${PROG}.10 contains  flowcode S, calling  m.toposuchoice script to search a potential R between two S
+                if [ ! -z "$HYDRO" ] ;then
+                  cut -d" " -f1 $TMP.${PROG}.10 > $TMP.${PROG}.11 2>>~/$LOGFILE
+                  if [ "`cat $TMP.${PROG}.11`" = "S" ];then
+					if [ ! -z "$DISTFOS" ] ;then
+						m.toposuchoice input=$INPUT hydro=$HYDRO id=$ID idhydro=$IDHYDRO distreach=$DISTFOS ident=$IDENT file=$TMP.${PROG}.10 2>>~/$LOGFILE
+					else
+						m.toposuchoice input=$INPUT hydro=$HYDRO id=$ID idhydro=$IDHYDRO ident=$IDENT file=$TMP.${PROG}.10 2>>~/$LOGFILE
+					
+					fi	
+                  fi
+                fi
+  fi
+
+else
+  #if $TMP.${PROG}.9 is not empty, that means FlowCode is not Null
+   #calling  m.toposuchoice script if FlowCode = S
+	v.db.select -c map=$OUTPUT column=FlowCode,FlowID fs=" " layer=1 where="$ID = $IDENT" nv=0 > $TMP.${PROG}.10 2>>~/$LOGFILE
+	cut -d" " -f1 $TMP.${PROG}.10 > $TMP.${PROG}.11 2>>~/$LOGFILE
+  if [ ! -z "$HYDRO" ] ;then
+    if [ "`cat $TMP.${PROG}.11`" = "S" ];then
+		if [ ! -z "$DISTFOS" ] ;then
+			m.toposuchoice input=$INPUT hydro=$HYDRO id=$ID idhydro=$IDHYDRO distreach=$DISTFOS ident=$IDENT file=$TMP.${PROG}.10 2>>~/$LOGFILE
+		else
+			m.toposuchoice input=$INPUT hydro=$HYDRO id=$ID idhydro=$IDHYDRO ident=$IDENT file=$TMP.${PROG}.10 2>>~/$LOGFILE
+		fi	
+    fi
+  fi
+fi
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+################### begin step 4 calcul slope and distance
+
+#Now we know for the IDENT in process the FlowCode and FlowID, wa can calculate Dist and Slope
+#calcul between centroids
+#storing  x,y,z from  IDENT centroid in $TMP.${PROG}.12
+v.db.select -c map=$INPUT column=x,y,z fs=" " nv=0 where="$ID = $IDENT" > $TMP.${PROG}.12 2>>~/$LOGFILE
+
+#searching if  SU is an outlet : flowID = 0
+v.db.select -c map=$OUTPUT column=FlowID fs=" " layer=1 where="$ID = $IDENT" nv=0 > $TMP.${PROG}.13 2>>~/$LOGFILE
+
+
+
+
+  #if  $TMP.${PROG}.10 != Nodata, distance and slope calculation else we do nothing
+  if [ "`cat $TMP.${PROG}.10`" != "Nodata" ] ;then
+  
+          #if FlowCode = S, storing  x,y,z in  INPUT with help of FlowID
+          cut -d" " -f1 $TMP.${PROG}.10 > $TMP.${PROG}.11 2>>~/$LOGFILE
+          if [ "`cat $TMP.${PROG}.11`" = "S" ] ;then
+                  #if FlowCode = S, storing  x,y,z in INPUT with help of  FlowID  in $TMP.${PROG}.14
+                  v.db.select -c map=$INPUT column=x,y,z where="$ID = `cat $TMP.${PROG}.10  |cut -d" " -f2`" fs=" " nv=0 > $TMP.${PROG}.14	 2>>~/$LOGFILE
+          else
+                  #if FlowCode = R, storing  x,y,z in INPUT with help of  FlowID  in $TMP.${PROG}.14
+                  v.db.select -c map=$HYDRO column=x,y,z where="$IDHYDRO = `cat $TMP.${PROG}.10 |cut -d" " -f2`" fs=" " nv=0 > $TMP.${PROG}.14 2>>~/$LOGFILE
+          fi
+          
+          #calling  m.pente2pl script for  dist and Slope calculation
+          m.pente2pl --input1=$TMP.${PROG}.12 --input2=$TMP.${PROG}.14 --output=$TMP.${PROG}.15 --slope=$SLOP_VAL 2>>~/$LOGFILE
+         
+          
+          
+          #$TMP.${PROG}.15 structure: slope, distance
+          if [ ! -z "`cat ~/$LOGFILE`" ];then
+			g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+			cleanup
+			exit 2
+		  fi
+          ################### ending step 4  slope and distance calculation
+  
+          
+          
+          ################## begin step 5 updating columns flowcode, flowid, dist and slope from attribut table of OUTPUT
+          #updating flowcode
+          v.db.update map=$OUTPUT layer=1 column=FlowCode value=`cat $TMP.${PROG}.10|cut -d" " -f1` where="$ID =$IDENT" --q 2>>~/$LOGFILE
+          #updating FlowID
+          v.db.update map=$OUTPUT layer=1 column=FlowID value=`cat $TMP.${PROG}.10|cut -d" " -f2` where="$ID =$IDENT" --q 2>>~/$LOGFILE
+          #updating Slope
+          v.db.update map=$OUTPUT layer=1 column=Slope value=`cat $TMP.${PROG}.15|cut -d" " -f1` where="$ID =$IDENT" --q 2>>~/$LOGFILE
+          #updating Dist
+          v.db.update map=$OUTPUT layer=1 column=FlowDist value=`cat $TMP.${PROG}.15|cut -d" " -f2` where="$ID =$IDENT" --q 2>>~/$LOGFILE
+  else
+          ################## begin step 5 updating columns flowcode, flowid, dist and slope from attribut table of OUTPUT and put null value
+          #updating flowcode
+          v.db.update map=$OUTPUT layer=1 column=FlowCode value="" where="$ID =$IDENT" --q 2>>~/$LOGFILE
+          #updating FlowID
+          v.db.update map=$OUTPUT layer=1 column=FlowID value=Null where="$ID =$IDENT" --q 2>>~/$LOGFILE
+          #updating Slope
+          v.db.update map=$OUTPUT layer=1 column=Slope value=Null where="$ID =$IDENT" --q 2>>~/$LOGFILE
+          #v Dist
+          v.db.update map=$OUTPUT layer=1 column=FlowDist value=Null where="$ID =$IDENT" --q 2>>~/$LOGFILE
+  fi
+
+#ending step 5
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+			g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+			cleanup
+			exit 2
+fi
+
+
+
+if [ "`cat $TMP.${PROG}.9`" != "a" ] && [ $GIS_FLAG_B -eq 1 ] ;then
+  echo "L 2 1" >$TMP.${PROG}.16 2>>~/$LOGFILE
+  echo "`cat $TMP.${PROG}.12|cut -d" " -f1,2 `" >>$TMP.${PROG}.16 2>>~/$LOGFILE
+  echo "`cat $TMP.${PROG}.14|cut -d" " -f1,2 `" >>$TMP.${PROG}.16 2>>~/$LOGFILE
+  echo "1 $IDENT" >>$TMP.${PROG}.16 2>>~/$LOGFILE
+  v.in.ascii -n input=$TMP.${PROG}.16 output="$INPUT"_toposuneighbourtmp1 format=standard --q 2>>~/$LOGFILE
+  v.db.addtable map="$INPUT"_toposuneighbourtmp1 --q 2>>~/$LOGFILE
+  if [ ! -z "`cat ~/$LOGFILE`" ];then
+			g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+			cleanup
+			exit 2
+fi
+  v.extract input=$INPUT output="$INPUT"_toposuneighbourtmp2 where="$ID=$IDENT" --q 2>>~/$LOGFILE
+  if [ ! -z "`cat ~/$LOGFILE`" ];then
+			g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+			cleanup
+			exit 2
+fi
+  v.overlay  ainput="$INPUT"_toposuneighbourtmp1 atype=line binput="$INPUT"_toposuneighbourtmp2 btype=area output="$INPUT"_toposuneighbourtmp3 operator=and --q 2>>~/$LOGFILE
+  if [ ! -z "`cat ~/$LOGFILE`" ];then
+			g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+			cleanup
+			exit 2
+fi
+  v.out.ascii input="$INPUT"_toposuneighbourtmp3 output=$TMP.${PROG}.17 format=standard --q 2>>~/$LOGFILE
+  if [ ! -z "`cat ~/$LOGFILE`" ];then
+			g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+			cleanup
+			exit 2
+fi
+  tail -n 4 $TMP.${PROG}.17 |head -n 3 >> $FILE 2>>~/$LOGFILE
+  echo "1 $IDENT" >> $FILE 2>>~/$LOGFILE
+  g.remove vect="$INPUT"_toposuneighbourtmp1,"$INPUT"_toposuneighbourtmp2,"$INPUT"_toposuneighbourtmp3 --q 2>>~/$LOGFILE
+  
+
+fi
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+			g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+			cleanup
+			exit 2
+fi
+#cleanup procedure
+cleanup
+exit 0
+

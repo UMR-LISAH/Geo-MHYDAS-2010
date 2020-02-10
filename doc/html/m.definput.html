@@ -1,0 +1,166 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>GRASS GIS: m.definput</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<link rel="stylesheet" href="grassdocs.css" type="text/css">
+</head>
+<body bgcolor="white">
+
+<img src="grass_logo.png" alt="GRASS logo"><hr align=center size=6 noshade>
+
+<h2>NAME</h2>
+<em><b>m.definput</b></em>  - Creation xml files or fluidx files for OpenFluid Engine 1.5 or superior
+<h2>KEYWORDS</h2>
+vector, OpenFluid,  fluidx, xml
+<h2>SYNOPSIS</h2>
+<b>m.definput</b><br>
+<b>m.definput help</b><br>
+<b>m.definput</b> [-<b>sx</b>] <b>input</b>=<em>name</em> <b>directory</b>=<em>string</em> <b>type</b>=<em>string</em>  [<b>IDCOL</b>=<em>string</em>]   [<b>TYPEDOWNCOL</b>=<em>string</em>]   [<b>DOWNCOL</b>=<em>string</em>]   [<b>GUCOL</b>=<em>string</em>]   [<b>PCSSCOL</b>=<em>string</em>]   [<b>COLUMN</b>=<em>string</em>[,<i>string</i>,...]]   [<b>NAME</b>=<em>string</em>]   [--<b>verbose</b>]  [--<b>quiet</b>] 
+
+<h3>Flags:</h3>
+<DL>
+<DT><b>-s</b></DT>
+<DD>only show attribute columns of input and exit (no file creation)</DD>
+
+<DT><b>-x</b></DT>
+<DD>create xml extension instead of default fluidx extension format</DD>
+
+
+<DT><b>--verbose</b></DT>
+<DD>Verbose module output</DD>
+<DT><b>--quiet</b></DT>
+<DD>Quiet module output</DD>
+</DL>
+
+<h3>Parameters:</h3>
+<DL>
+<DT><b>input</b>=<em>name</em></DT>
+<DD>Input vector name</DD>
+
+<DT><b>directory</b>=<em>string</em></DT>
+<DD>Name directory for the file(s)</DD>
+
+<DT><b>type</b>=<em>string</em></DT>
+<DD>Unit type (SU, RS or GU)</DD>
+<DD>Options: <em>SU, RS, GU</em></DD>
+
+<DT><b>IDCOL</b>=<em>string</em></DT>
+<DD>Column name ID unit (default is SELF_ID)</DD>
+
+<DT><b>TYPEDOWNCOL</b>=<em>string</em></DT>
+<DD>Column name for the TYPE downstream unit only if TYPE = SU (default is for SU TYPE : FLOW_CDE)</DD>
+
+<DT><b>DOWNCOL</b>=<em>string</em></DT>
+<DD>Column name for the ID downstream unit (default is for SU TYPE : FLOW_ID, for RS TYPE : LORCH_ID and for GU TYPE : EXHGW_ID)</DD>
+
+<DT><b>GUCOL</b>=<em>string</em></DT>
+<DD>Column name for the Exchange GU connected to SU (default is EXHGW_ID)</DD>
+
+<DT><b>PCSSCOL</b>=<em>string</em></DT>
+<DD>Column name for the Process Order (default is PCSS_ORD)</DD>
+
+<DT><b>COLUMN</b>=<em>string[,<i>string</i>,...]</em></DT>
+<DD>Column names of attribut data for the XXdefs.ddata.fluidx/xml (column name separated by comma ',')</DD>
+
+<DT><b>NAME</b>=<em>string</em></DT>
+<DD>File name for XXddef.fluidx/xml and XXdefs.ddata.fluidx/xml (default is $TYPEddef.fluidx/xml and $TYPEdefs.ddata.fluidx/xml)</DD>
+
+</DL>
+
+<h2>DESCRIPTION</h2>
+<em>m.definput</em> allows the user to create xml files or fluidx files for OpenFLUID version 1.5 or superior. Flag <em>s</em> allows to see column names for input file and exit (it's a front end of <em><a href="http://grass.osgeo.org/grass64/manuals/html64_user/v.info.html">v.info</a></em> command). The input layers must have been created for RS layer by <em><a href="m.toporeach.html">m.toporeach</a></em>, for SU layer by <em><a href="m.toposu.html">m.toposu</a></em>; if not, input layers must contain compulsory columns (See <em> Notes</em> paragraph for details). Flag x allows to create xml files (for OpenFLUID 1.5) instead of fluidx files (for OpenFLUID 1.6)
+
+<h2>NOTES</h2>
+If input layer is created by segmentation functions (<em><a href="m.toporeach.html">m.toporeach</a></em>, <em><a href="m.toposu.html">m.toposu</a></em> ), the following parameters are optional: <em>IDCOL</em>, <em>TYPEDOWNCOL</em>, <em>DOWNCOL</em>, <em>GUCOL</em> and <em>PCSSCOL</em>.
+<br>
+If the user wants to create XXdefs.ddata.fluidx/xml file, <em>COLUMN</em> must be provided with column names desired.
+<br>
+<em>NAME</em> parameter is optional; if not set, fluidx/xml files will have a type name  (RSddef.fluidx/xml and RSdefs.ddata.fluidx/xml for RS type, SUddef.fluidx/xml and SUdefs.ddata.fluidx/xml for SU type and GUddef.fluidx/xml and GUdefs.ddata.fluidx/xml for GU type).
+<br> For more informations about fluidx/xml formats, please go to the OpenFLUID  <em><a href="http://www.umr-lisah.fr/openfluid/community/index.php/Main_Page">Community</a></em> website.
+
+<h2>EXAMPLES</h2>
+<h4> Creation of xml file for SU layer</h4>
+Creation of SUddef.xml
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.definput -x input=SU directory=~/tmp/ type=SU
+GRASS 6.3.0 :~ &gt; cat ~/tmp/SUddef.xml
+<pre class="verbatim">&lt;?xml version="1.0" standalone="yes"?&gt;
+&lt;openfluid&gt;
+  &lt;domain&gt;
+    &lt;definition&gt;
+      &lt;unit class="SU" ID="1" pcsorder="1"&gt;
+        &lt;to class="SU" ID="2" /&gt;
+
+      &lt;/unit&gt;
+      &lt;unit class="SU" ID="2" pcsorder="2"&gt;
+        &lt;to class="RS" ID="1" /&gt;
+      &lt;/unit&gt;
+      &lt;unit class="SU" ID="3" pcsorder="1"&gt;
+        &lt;to class="RS" ID="2" /&gt;
+
+      &lt;/unit&gt;
+      &lt;unit class="RS" ID="1" pcsorder="1"&gt;
+        &lt;to class="RS" ID="2" /&gt;
+      &lt;/unit&gt;
+      &lt;unit class="RS" ID="2" pcsorder="1"&gt;
+      &lt;/unit&gt;
+
+    &lt;/definition&gt;
+  &lt;/domain&gt;
+&lt;/openfluid&gt;
+</pre></div>
+Creation of SUddef.fluidx and SUdefs.ddata.fluidx
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.definput input=SU directory=~/tmp/ type=SU COLUMN=ks,slope
+</pre></div>
+
+<h4> Creation of xml file for RS layer (not created by segmentation functions)</h4>
+Showing column names
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.definput -s input=RSmanual directory=~/tmp/ type=RS
+Displaying column types/names for database connection of layer 1:
+INTEGER|cat
+INTEGER|Id
+INTEGER|num_bief
+CHARACTER|encombre_
+CHARACTER|substrat
+INTEGER|haut
+INTEGER|bas
+INTEGER|prof_
+CHARACTER|infos
+INTEGER|UpNode
+INTEGER|DownNode
+INTEGER|LowRS
+DOUBLE PRECISION|LENGTH
+INTEGER|ExchangeGU
+INTEGER|ProcessOrd
+DOUBLE PRECISION|Slope
+
+
+GRASS 6.3.0 :~ &gt; m.definput -x input=RSmanual directory=~/tmp/ type=RS IDCOL=num_bief DOWNCOL=LowRS GUCOL=ExchangeGU PCSSCOL=ProcessOrd NAME=reach
+
+</pre></div>
+
+
+
+
+
+<h2>SEE ALSO</h2>
+<a href="m.toporeach.html">m.toporeach</a>,  <a href="m.toposu.html">m.toposu</a> 
+
+
+<h2>AUTHORS</h2>
+Michael Rabotin, UMR LISAH, Montpellier, France
+<p>rabotin@supagro.inra.fr
+
+</p><p><em> Last Changed: </em> 23 January 2012
+</p></dl>
+
+<p></p><hr>
+<P><a href="index.html">Main index</a> 
+<p>Copyright <a href="http://www.umr-lisah.fr/openfluid/index.php?page=welc&amp;lang=fr">UMR LISAH OpenFluid</a></p>
+
+
+
+
+
+</body>
+</html>

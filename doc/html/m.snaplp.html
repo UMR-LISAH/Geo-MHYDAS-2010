@@ -1,0 +1,97 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html><head>
+
+
+
+<title>GRASS GIS: m.snaplp</title>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<link rel="stylesheet" href="grassdocs.css" type="text/css">
+</head><body bgcolor="white">
+
+<img src="grass_logo.png" alt="GRASS logo"><hr size="6" align="center" noshade="noshade">
+
+<h2>NAME</h2>
+<em><b>m.snaplp</b></em>  Snapping linear entities on areal entities
+<h2>KEYWORDS</h2>
+vector, linear, snap, areal
+
+<h2>SYNOPSIS</h2>
+<b>m.snaplp</b><br>
+<b>m.snaplp help</b><br>
+<b>m.snaplp</b> [-<b>b</b>] <b>input</b>=<em>name</em> <b>output</b>=<em>name</em> <b>polygon</b>=<em>name</em> <b>snap</b>=<em>float</em>  [--<b>overwrite</b>]  [--<b>verbose</b>]  [--<b>quiet</b>] 
+
+<h3>Flags:</h3>
+<dl>
+<dt><b>-b</b></dt>
+<dd>Line creation by polygone boundaries (pseudo snap because polygone boundaries are used to create a new vector line)</dd>
+
+<dt><b>--overwrite</b></dt>
+<dd>Allow output files to overwrite existing files</dd>
+<dt><b>--verbose</b></dt>
+<dd>Verbose module output</dd>
+<dt><b>--quiet</b></dt>
+<dd>Quiet module output</dd>
+</dl>
+
+<h3>Parameters:</h3>
+<dl>
+<dt><b>input</b>=<em>name</em></dt>
+<dd>Input vector map</dd>
+
+<dt><b>output</b>=<em>name</em></dt>
+<dd>Output vector map</dd>
+
+<dt><b>polygon</b>=<em>name</em></dt>
+<dd>Input vector polygon</dd>
+
+<dt><b>snap</b>=<em>float</em></dt>
+<dd>maximum distance of snap (in map units)</dd>
+
+</dl>
+
+<h2>DESCRIPTION</h2>
+<em>m.snaplp</em> allows the user to snap lines on areal entities in threshold (<em>snap</em> value).
+
+<h2>NOTES</h2>
+This script makes an iterative process for each line in three steps:
+snap line points on polygon points, snap line points on polygon
+boundaries and add polygon points along line. If the <em>snap</em> value is too large, geometry problems can appear. In this case, the user should clean the line vector geometry manually before using <em>m.snaplp</em> script.
+<p> If using Flag B, a more simplified method is used : closest boundaries of polygon layer are used to create a new line vector map. Each boundary used will be a new line.
+
+<h2>EXAMPLES</h2>
+<h3> Snapping line1 vector to polygon1 vector with a threshold of one meter</h3>
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.snaplp input=line1 polygon=polygon1 output=line2 snap=1
+</pre></div>
+
+<p>
+</p><ul>
+<table><tbody><tr><td>
+<img src="m.snaplp.png" border="1">
+</td></tr>
+<tr><td align="center">
+<font size="-1"><em>Input line1 layer (left; in green color) ; Output line2 layer (right; in red color)</em></font>
+</td></tr>
+</tbody></table>
+</ul>
+
+<p>
+<h3> Using Flag B</h3>
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.snaplp -b input=line1 polygon=polygon1 output=line2 snap=1
+</pre></div>
+<p>
+
+<h2>SEE ALSO</h2>
+<a href="m.network.html">m.network</a>, <a href="m.disline.html">m.disline</a>, <a href="m.segline.html">m.segline</a>
+
+<p></p><h2>AUTHORS</h2>
+Michael Rabotin, UMR LISAH, Montpellier, France
+<p>rabotin@supagro.inra.fr
+
+</p><p><em> Last Changed: </em> 21 July 2010
+</p>
+
+<p></p><hr>
+<P><a href="index.html">Main index</a> 
+<p>Copyright <a href="http://www.umr-lisah.fr/openfluid/index.php?page=welc&amp;lang=fr">UMR LISAH OpenFluid</a></p>
+
+</body></html>

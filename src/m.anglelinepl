@@ -1,0 +1,74 @@
+#!/usr/bin/perl -w
+############################################################################
+#
+# MODULE:       m.anglelinepl
+# AUTHOR(S):    Michael Rabotin (rabotin@supagro.inra.fr)
+# PURPOSE:      Angle calcul between line nodes
+# REQUIREMENTS: 
+#
+# COPYRIGHT:    (C) 2009 UMR LISAH - OpenFluid
+#
+#               This program is free software under the GNU General Public
+#               License (>=v2). Read the file COPYING that comes with GRASS
+#               for details.
+#
+#############################################################################
+
+use strict;
+use Math::Trig;
+use constant PI	=> 4 * atan2 1, 1;
+use Getopt::Long;
+
+my ($infile, $outfile);
+
+GetOptions("input=s", \$infile, "output=s", \$outfile);
+
+if(!$infile or !$outfile ) {
+  print "Usage: $0 --input=[filename] --output=[filename] \n";
+  exit 0;
+}
+
+open (FILE1,"$infile");
+open (FILE2, ">> $outfile");
+
+my @tab0=<FILE1>;
+chomp @tab0;
+my ($cat1,$x1,$y1);
+my ($cat2,$x2,$y2);
+my ($cat3,$x3,$y3);
+my ($dist12,$dist23,$dist31,$dist902,$dist90,$dist31n,$dist90n);
+my ($dist123,$dist123n);
+#my ($cosangle,$angle,$angledeg);
+my $Ntab = scalar(@tab0)-2;
+# we don't take the first and the last point (because angle != of 90° at each time)
+
+for (my $i=2;$i<$Ntab;$i++){
+	($cat1,$x1,$y1)=split / /,$tab0[$i-1];
+	($cat2,$x2,$y2)=split / /,$tab0[$i];	
+	($cat3,$x3,$y3)=split / /,$tab0[$i+1];
+	#distance between the three points calculation	
+	
+	$dist12=sqrt(($x1-$x2)**2+($y1-$y2)**2);
+	$dist23=sqrt(($x2-$x3)**2+($y2-$y3)**2);
+	$dist31=sqrt(($x3-$x1)**2+($y3-$y1)**2);
+	$dist31n = sprintf("%.4f", $dist31);
+	$dist123=$dist12+$dist23;
+	$dist123n = sprintf("%.4f", $dist123);
+	#calculation of dist90 = (dist90)**2 = (dist12)**2 + (dist21)**2
+	
+	$dist902=($dist12)**2+($dist23)**2;
+	$dist90=sqrt($dist902);
+	$dist90n = sprintf("%.4f", $dist90);
+	#if the angle is 90 so dist31 = dist90
+	
+	if ($dist31n != $dist90n){
+		#and if the distance d32 != d12 + d23 (otherwise it means that the angle = 180° between the three points)
+		
+		if ($dist31n != $dist123n){
+			print FILE2 "diff";
+		}
+	}
+
+}
+close (FILE1);
+close (FILE2);

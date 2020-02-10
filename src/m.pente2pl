@@ -1,0 +1,65 @@
+#!/usr/bin/perl -w
+############################################################################
+#
+# MODULE:       m.pente2pl
+# AUTHOR(S):    Michael Rabotin (rabotin@supagro.inra.fr)
+# PURPOSE:      Slope calcul between two points with xyz coordinates
+# REQUIREMENTS: 
+#
+# COPYRIGHT:    (C) 2009 UMR LISAH - OpenFluid
+#
+#               This program is free software under the GNU General Public
+#               License (>=v2). Read the file COPYING that comes with GRASS
+#               for details.
+#
+#############################################################################
+
+
+use strict;
+use Getopt::Long;
+
+my ($infile1, $infile2, $outfile, $slope);
+
+GetOptions("input1=s", \$infile1, "input2=s", \$infile2, "output=s", \$outfile, "slope=f", \$slope);
+
+if(!$infile1 or !$infile2 or !$outfile or !$slope) {
+  print "Usage: $0 --input1=[filename] --input2=[filename] --output=[filename] --slope=[value]\n";
+  exit 0;
+}
+
+open (FILE1,"$infile1");
+open (FILE2,"$infile2");
+open (FILE3, ">> $outfile");
+
+
+my $dist;
+my $dist2;
+my $pente;
+my $pente2;
+my($xA,$yA,$altiA)=split / /,<FILE1>;
+close (FILE1);
+
+my($xB,$yB,$altiB)=split / /,<FILE2>;
+close (FILE2);
+
+if ($altiB != $altiA){
+		if ($altiA > $altiB){
+			$pente=($altiA-$altiB)/sqrt(($xA-$xB)**2+($yA-$yB)**2+($altiA-$altiB)**2);
+			my $pente2= sprintf("%.4f",$pente);
+			$dist=sqrt(($xA-$xB)**2+($yA-$yB)**2+($altiA-$altiB)**2);
+			my $dist2= sprintf("%.4f",$dist);
+			print FILE3 "$pente2 $dist2";
+		}
+		else {
+		$dist=sqrt(($xA-$xB)**2+($yA-$yB)**2+($altiA-$altiB)**2);
+		my $dist2= sprintf("%.4f",$dist);
+		print FILE3 "$slope $dist2";
+		}
+}
+else {
+		$dist=sqrt(($xA-$xB)**2+($yA-$yB)**2+($altiA-$altiB)**2);
+		my $dist2= sprintf("%.4f",$dist);
+		print FILE3 "$slope $dist2";
+}
+
+close (FILE3);

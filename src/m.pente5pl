@@ -1,0 +1,88 @@
+#!/usr/bin/perl -w
+############################################################################
+#
+# MODULE:       m.pente5pl
+# AUTHOR(S):    Michael Rabotin (rabotin@supagro.inra.fr)
+# PURPOSE:      Slope calcul (or elevation difference calcul) between points
+# REQUIREMENTS: 
+#
+# COPYRIGHT:    (C) 2009 UMR LISAH - OpenFluid
+#
+#               This program is free software under the GNU General Public
+#               License (>=v2). Read the file COPYING that comes with GRASS
+#               for details.
+#
+#############################################################################
+
+
+
+use strict;
+use Getopt::Long;
+
+my ($infile1, $infile2, $outfile, $code, $slope, $slope2);
+
+GetOptions("input1=s", \$infile1, "input2=s", \$infile2, "output=s", \$outfile, "code=s", \$code, "slope=s", \$slope, "slope2=f", \$slope2);
+
+if(!$infile1 or !$infile2 or !$outfile or !$code or !$slope or !$slope2) {
+  print "Usage: $0 --input1=[filename] --input2=[filename] --output=[filename] --code=[S or R] --slope=[y or n] --slope2=[value]\n";
+  exit 0;
+}
+
+open (FILE1,"$infile1");
+open (FILE2,"$infile2");
+open (FILE3, ">> $outfile");
+
+
+my($catA,$altiA,$xA,$yA)=split / /,<FILE1>;
+close (FILE1);
+
+my @tab2=<FILE2>;
+close (FILE2);
+chomp @tab2;
+my ($j,$k);
+my($cati,$altii,$xi,$yi);
+
+my $Ntab2 = scalar(@tab2);
+my @tab3;
+
+for(my $i=0;$i<$Ntab2;$i++){
+	($cati,$altii,$xi,$yi)=split / /,$tab2[$i];
+
+	
+#slope calculation or difference altitude between point A and point i 
+	if ($altii != $altiA){
+		if ($altiA > $altii){
+			if ($slope=~ /y/){
+				my $pente=($altiA-$altii)/sqrt(($xA-$xi)**2+($yA-$yi)**2+($altiA-$altii)**2);
+				$tab3[$i]="$code $cati $pente";
+				}
+			else {
+				my $alti=($altiA-$altii);
+				$tab3[$i]="$code $cati $alti";
+			}
+		}
+		else {
+		$tab3[$i]="$code $cati $slope2";
+		}
+	}
+	else {
+		$tab3[$i]="$code $cati $slope2";
+	}
+}
+
+#we sort in reverse order 
+my @tab4 = sort {
+	my @champs_a = split / /,$a;
+	my @champs_b = split / /,$b;
+	$champs_b[2] <=> $champs_a[2]
+	} @tab3;
+
+my $Ntab4 = scalar(@tab4);
+
+print FILE3 "$tab4[0]";
+
+close (FILE3);
+
+
+
+

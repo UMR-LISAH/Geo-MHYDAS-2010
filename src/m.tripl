@@ -1,0 +1,50 @@
+#!/usr/bin/perl -w
+############################################################################
+#
+# MODULE:       m.tripl
+# AUTHOR(S):    Michael Rabotin (rabotin@supagro.inra.fr)
+# PURPOSE:      Sort on $col column (float accepted)
+# REQUIREMENTS: 
+#
+# COPYRIGHT:    (C) 2009 UMR LISAH - OpenFluid
+#
+#               This program is free software under the GNU General Public
+#               License (>=v2). Read the file COPYING that comes with GRASS
+#               for details.
+#
+#############################################################################
+
+
+use strict;
+use Getopt::Long;
+
+my ($infile, $outfile, $col);
+
+GetOptions("input=s", \$infile, "output=s", \$outfile, "col=n", \$col);
+
+#if(!$infile or !$outfile or !$col ) {
+if(!$infile or !$outfile ) {
+  print "Usage: $0 --input=[filename] --output=[filename] --col=[column number]\n";
+  exit 0;
+}
+
+open (FILE1,"$infile");
+open (FILE2, ">> $outfile");
+
+
+chomp $col;
+
+my @lignes=<FILE1>;
+chomp @lignes;
+my @lignes_triees = sort {
+	my @champs_a = split / /,$a;
+	my @champs_b = split / /,$b;
+	$champs_a[$col] <=> $champs_b[$col]
+	} @lignes;
+
+my $Ntab = scalar(@lignes_triees);
+for(my $i=0;$i<$Ntab;$i++){
+	print FILE2 "$lignes_triees[$i]\n";
+	
+}
+close FILE2;

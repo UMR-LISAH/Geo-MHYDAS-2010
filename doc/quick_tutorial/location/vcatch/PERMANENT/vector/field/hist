@@ -1,0 +1,5 @@
+COMMAND: v.in.ogr dsn="/home/rabotin/000__Lisah/1_projets/0_segmentation_functions/3_segmentation_V1C/12_version_distribution/10_03/doc_en_cours/quick_start_guide/shapes" output="field" layer="field" min_area=0.0001 snap=0.2
+GISDBASE: /home/rabotin/grassdata
+LOCATION: vcatch MAPSET: PERMANENT USER: rabotin DATE: Wed Mar 10 10:02:21 2010
+---------------------------------------------------------------------------------
+18 input polygonsTotal area: 6.094963e+05 (18 areas)Overlapping area: 0.000000e+00 (0 areas)Area without category: 0.000000e+00 (0 areas)

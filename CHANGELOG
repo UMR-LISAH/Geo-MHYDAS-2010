@@ -1,0 +1,453 @@
+Version 12.01
+=============
+      * updating documentation
+      * m.toposuneighbour : fixed bug in line 572
+
+Version 11.07
+=============
+      * m.toporeach : remove flag e and directory option
+      * m.toposu : remove flag e and directory option
+      * m.definput : adding flag x
+      * m.dispolyg : fixed bug in line 621
+
+
+Version 11.05
+=============
+      * m.definput : modify script for openfluid-engine 1.6.2 (fluidx extensions, ddata file column name change, remove -1 number and accept R or RL for reach identification)
+
+Version 11.03
+=============
+      * m.dispolyg : adding new comments for uml activity diagram 
+
+      * m.disline : adding null length research and exit if found
+
+      * m.disline : adding comments if no line with length inferior to threshold found
+
+      * m.asciipoint : adding removing duplicate point command
+
+Version 10.07
+=============
+      * m.network : adding a sort command for cat calculation in v.db.select command (line 223).
+
+      * m.altiarea : modifying algorithm; using v.rast.stats command instead of specific developed command when using no flag A and no flag N
+
+      * m.altiarea : modifying algorithm; using v.distance command instead of for loop with v.db.update to upload data from OUTPOINT to OUTPUT
+
+      * m.altiline : modifying algorithm; using v.rast.stats command instead of specific developed command when using no flag C
+
+      * m.altiline : modifying algorithm; avoiding using temporary files adding attribute data for OUTPUT (v.db.update loop)
+
+      * m.toporeach : modifying security on presence/absence of a column [Ll][Ee][Nn][Gg][Tt][Hh] already present
+
+      * for all shell scripts : modifying security on grass version without calling bc command now
+
+      * for all shell scripts : adding security on perl language testing 
+
+      * m.altiarea : removing bc use (replacement by awk) for flag N calculation
+
+      * m.pointline : removing bc use (replacement by awk) for calculation of differences between ending coordinate et starting coordinate (lines 317-323)
+
+       * m.snaplp : removing bc use (replacement by awk) for calculation of differences between ending coordinate et starting coordinate (lines  413-420)
+
+       * m.snaplp : removing security logfile for v.edit command
+
+       * m.toposuboundaries : remove some verbose securities call
+
+       * m.toposu : modifyied securtity when calling $TMP.${PROG}.29
+
+       * m.douglas : removing security for v.segment command 
+
+Version 10.04
+=============
+	* m.definput : for $NAMEDEF.ddef.xml and $NAMEDEF.defs.ddata.xml files, modify first call by > and not >> (allows creation of new file instead of writing in existing file).
+
+	* for all shell scripts : adding new securities for avoid illegal filename for output layers.  
+
+	* for m.toposu help documentation : adding information about formula calculation for FLOW DISTANCE paramater.
+
+	* m.toposuline : removing length calculation and adding FlowID parameter
+
+      * m.slope : modifying securities for v.what.rast in case of dem raster in integer value (warning message appears and blocks m.slope script)
+
+Version 10.03
+=============
+	* First release of Geo-MHYDAS
+
+
+20100302_V10.03
+===============
+	* m.toporeach, m.slope, m.pente3pl : remplacement de la valeur 0.0001 (quand pente <0) en tant que variable (slop_val) utilisateur
+
+	* m.toposu, m.pente2pl, m.pente5pl, m.pente4pl, m.toposuneighbour, m.toposuboundaries, m.toposucentroid : remplacement de la valeur 0.0001 (quand pente <0) en tant que variable (slop_val) utilisateur
+
+	* m.altiarea : algo modifié et plus rapide (plus besoin de m.meanaltipl)
+
+	* m.altiline : algo modifié et plus rapide (plus besoin de m.meanaltipl)
+
+	* m.dispolyg : ajout de la suppression de la colonne $COLUMN
+
+	* m.segline : rajout d'une sécurité pour enlever les points qui tombent sur des nodes de INPUT
+
+	* pour tous les codes : simplification de la suppression de LOGFILE dans cleanup procedure; possibilité de lancer plusieurs géomhydas en parallèle 
+
+	* m.colseg : utilisable sur couche de lignes 
+	
+	* m.definput : dans sécurités avec appel de db.columns, on remplace par v.info -c |cut -d"|" -f2 pour accpeter vector avec 2 layers. idem dans boucle sur SU et RS avec appel de db.columns
+
+
+
+20100208_V10.02
+===============
+	* à partir de cette version:  on change le numéro de version (année.mois.chiffre). Cette version sera la première distribuée. On ne garde dans cette versions que les codes stables. On enlève donc : m.buffer, m.network.create, m.network.flip, m. geocheck, m.number, m.polypatch et m.topogu
+	
+	* pour tous les codes : passage des commentaires en anglais; changement du nom de fichier version en ChangeLog
+
+	* pour tous les codes : ajout d'une sécurité sur driver dbf
+
+	* m.definput : pour création de RS.ddef.xml, on enlève le ID avec LORCH_iD= -1 dans ligne "to RS"
+
+	* m.toposu : les noms de colonnes du fichier OUTPUT sont désormais des options avec noms par défaut.
+
+	* m.toposu : le fichier Sudefs.dat ne se créé désormais qu'avec le flag e 
+
+	* m.toposu : avec le flag e , ajout d'une sécurité sur existence de $DIRECTOTY/$OUTPUT.shp
+
+	* m.toporeach : les noms de colonnes du fichier OUTPUT sont désormais des options avec noms par défaut. On en profite pour enlever la creation de la colonne OVLND_ID (rôle ?)
+
+	* m.pente3pl : dans le cas alti amont < à alti aval, on donne une pente à 0.0001 
+
+20100201_V1C3.2
+===============
+	* m.toporeach : ajout d'une sécurité sur la présence de la librairie ogr2ogr
+
+	* m.toposu : ajout d'une sécurité sur la présence de la librairie ogr2ogr
+
+	* m.network : suppression de la colone catdouble en dehors des boucles if
+
+	* m.network.create : création
+
+	* m.network.flip : création
+
+	* m.toporeach : ajout d'un code de nettoyage des cat dupliqués de $TMP.${PROG}.21
+
+
+20100113_V1C3.1
+===============
+	* m.altiarea : création du flag z qui récupère les infos de z de la couche input (permettra pour m.toposu d'éviter de recalculer les z des Su à chaque fois)
+
+	* m.toposu : mis à jour de g.parser pour suivre modifications de m.altiarea
+
+	* m.definput : mauvais appel de la variable Type ligne 342
+
+	* m.topogu : suite à demandes de Simon lalauze légères modification de mise en page des sorties xml et création du fichier GU_coordonnees.txt (qui contient x, y des centroides des GU)
+
+	
+20091123_V1C3.0
+===============
+	* m.topogu : modification à partir de la version de 20091109_V1C2.7; ajout du calcul de topologie entre GU et maille carrée
+
+	* m.disline : ligne 518 correction d'un bug (mauvais appel du fichier $TMP.${PROG}.41)
+
+	* m.segline : ligne 227, correction d'un bug lors de la vérification du type point de $POINT (appel de la mauvaise couche)
+
+	* m.point : modification de la commande v.in.ascii pour prise en compte de coordonnées en format INTEGER ou DOUBLE PRECISION
+
+	* m.asciipoint : ligne 298, modification du nombre de colonnes créées pour être raccord avec modif de m.point
+
+	* m.inlet : correction mauvais appel de INPUT lros de la vérif sécurité INPUT (ligne 163); ligne 195 : mauvais appel d'une couche temporaire
+
+	* m.pointline : suppression des colonnes catto,distto et along dans "$POINT"_pointlinetmp pour permettre patch (lignes 304 à 307)
+
+	* m.dispolygseg : mauvais appel de la layer lors du contrôle de validité de COLUMNP (ligne 251)
+
+	* m.sliverpolygseg : mauvais appel de la layer lors du contrôle de validité de COLUMNP (ligne 240)
+
+	* m.extractlineseg : ajout d'une sécurité pour non ajout de colonne cat supplémentaire (si colonne cat utilisée dans m.seg comme identifiant ligne)
+
+	* m.toporeach : ajout de la condition if sur sécurité <CAT_OUTLET> si pas de flag c
+
+	* m.toporeach et m.slope : problème de doublons d'ajout de la colonne Slope (à la fois dans m.toporeach et m.slope) + modification de la sécurité de la colonne <$COLUMN> dans m.slope
+
+	* m.seg : mise en place d'une sécurité sur <ID>, <OUTPUT_ID> qui doit être différent de cat
+
+	* m.toposu et m.toposu* : mise en place d'une sécurité sur les différesnts <ID*>, qui doivent être différents de cat
+
+	* m.toporeach : mise en place d'une sécurité sur les différents <ID*>, qui doivent être différents de cat
+
+	* m.topogu : mise en place d'une sécurité sur les différents <ID*>, qui doivent être différents de cat
+
+
+
+
+20091116_V1C2.9
+===============
+	* pour tous scripts nécessitant entrée avec valeur numérique : ajout d'une sécurité pour recherche de [:alpha:]. Ajout de cette nouvelle sécurité dans : m.asciipoint, m.burn, m.disline, m.dispolyg, m.dispolygseg, m.douglas, m.flowdirline, m.grid, m.hierapolygseg, m.pointline, m.sbw, m.sbwhole, m.seg, m.segline, m.snaplp, m.topogu, m.topoman, m.toporeach, m.toposu, m.toposuboudnaries, m.toposucentroid, m.toposuchoice, m.toposuneighbour
+
+	* m.buffer : ajout de 2>>~/$LOGFILE à la fin des commandes ; ajout de l'information à la fin du script du bon (ou pas) nombre de polygones créés par rapport au nombre de ligne de INPUT
+
+	* m.snaplp : création du flag b (création line par boundaries polygone)
+
+	* m.buffer : ajout du flag u permettant union avec couche POLYGONE
+
+	* m.number : création
+
+	* m.polypatch : création
+
+20091112_V1C2.8
+===============
+	* m.grid : création
+
+
+20091109_V1C2.7
+===============
+	* pour tous les scripts suivants : ajout de 2>>~/$LOGFILE à la fin des commandes; et test de la présence de ce fichier aux moments clés pour stop du script. Modifications des codes de sorties des exit (2 à la place de 1). Ajout de cette nouvelle procédure dans : m.asciipoint, m.altiarea, m.altiline, m.flowdirline, m.hierapolygseg, m.inlet, m.lineoverlay, m.outletalti, m.point, m.pointline, m.processord, m.sbwhole, m.segline, m.slope, m.testtype, m.testtype2, m.topoman, m.toposuboundaries, m.toposucentroid, m.toposuchoice, m.toposuline, m.toposuloop, m.toposuneighbour, m.network, m.sbw, m.dispolyg, m.disline, m.douglas, m.snaplp, m.seg, m.colseg, m.dispolygseg, m.sliverpolygseg, m.extractlineseg, m.toporeach, m.toposu, m.topogu, m.definput
+
+
+
+20091106_V1C2.6
+===============
+	* m.toporeach : recherche de l'outlet non pas par cat mais par value outlet de colonne $ID
+
+
+20091029_V1C2.5
+===============
+	* m.topogu : calcul spécifique du flowdist pour les interfaces en contact avec des gu qui ont une value de colgu non nulle
+
+	* m.toposu : ajout d'une sécurité sur ID qui doit obligatoirement être de l'integer et non pas du double precision (car pose pb lors du dissolve lors du traitement des boucles)
+
+	* m.altiarea : si pas flag A et pas flag N, et si porblème lors du calcul alittude moyenne (polygone trop petit), passage à un calcul d'altitude comme flag A 
+
+	* m.geocheck: création 
+
+	* m.network : modification de la façon de compter les nodes et les lines (v.build remplacé par v.info -t)
+
+
+20091028_V1C2.4
+===============
+	* m.buffer : ajout du script à partir de la version 20090918_V1C1.9RC1.5 et modification du script permettant meilleur découpage des petits segments (reste 2 bugs identifiés : supprimer les points du polygone buffer qui sont en contact avec le réseau de lignes: cas des angles aigus dans le réseau de lignes et qui posent problèmes lors du découpage ; et gérér le cas où des points sont en communs dans les lignes qui doivent découper le buffer).
+
+	* m.invtripl : mise en place d'une sécurité plus souple sur col (accepte col = 0)
+
+20091023_V1C2.3
+===============
+	* m.toposu : correction d'un bug lors du traitement des boucles. Après le merge des entités qui bouclent et calcul de la topologie, si présence de plusieurs boundaries entre les voisins, mauvaise attribution du nouveau voisin à l'un des deux polygones à problèmes du à des confusions entre appel de boundaries et/ou cat polygones.
+	
+	* m.topogu : correction de bugs mineurs
+
+
+20091014_V1C2.2
+===============
+	* m.lineoverlay : correction d'un bug lors du mauvais appel d'une couche
+
+	* m.topogu : création
+
+	* m.altiline et m.altiarea : correction bug mauvais appel lors de la vérif sécurité de INPUT
+
+
+20091014_V1C2.1
+===============
+	* on raccroche à partir de 20091001_V1C2.0
+
+	* pour tous les scripts : suppression de mapset="$MAPSET" pour toutes les sécurités sur recherche output, input_tmp...  et ajout de la ligne de commentaires suivante en cas de warning "<$> already exists in this mapset or in another mapset of this location. Use the --o flag to overwrite"
+
+
+20091001_V1C2.0RC1.0 (branche abandonnée)
+=========================================
+	* m.topogu: modification. il s'agit d'une complexification de m.topogu2 (issu de la branche 20090918_V1C1.9RC1.5) et du cannibalisme d'autres codes (old m.topogu)
+
+
+20091001_V1C2.0
+===============
+	* on raccroche à partir de 20090804_V1C1.9
+
+	* pour tous les scripts : ajout de mapset="$MAPSET" pour toutes les sécurités sur recherche input, output, input_tmp... 
+
+	* m.flowdirline: correction d'un bug à la ligne 135 (du à mauvaus copier coller lors du passage de 20090803_V1C1.8 à 20090804_V1C1.9
+
+	* m.hierapolygseg : ajout de la sécurité sur la présence ou non de INPUT
+
+### fin branche de test ###
+
+20090918_V1C1.9RC1.5 (branche abandonnée)
+=========================================
+* m.topogu2 : en début de scripts ajout d'une série de commandes pour nettoyer boundaries de la couche de départ
+
+20090914_V1C1.9RC1.4 (branche abandonnée)
+=========================================
+* m.topogu2 : ajout du calcul et export des coordonnées des centroides des GU; ajout du calcul et export des coordonnées des nodes des interfaces. Ainsi que des colonnes suivantes (remplies d'une constante): pour les GU:  ; pour les interfaces: 
+
+
+20090908_V1C1.9RC1.3 (branche abandonnée)
+=========================================
+* m.badshaped : création
+* m.baddistpl : création
+* m.asciilinepl : modification de l'en tête du script
+
+
+20090831_V1C1.9RC1.2 (branche abandonnée)
+=========================================
+* m.buffer : création
+
+
+20090812_V1C1.9RC1.1 (branche abandonnée)
+=========================================
+* m.topogu2 : correction d'un bug dans le fichier $fileinterface où il manquait des interfaces
+
+* m.topogu2 : ajout du calcul de l'aire des GU dans $filealtitude
+
+20090812_V1C1.9RC1.0(branche abandonnée)
+========================================
+* m.topogu2 et m.distpl : création
+
+### début branche de test ###
+
+
+20090804_V1C1.9
+===============
+* m.flowdirline : dans boucle fill sink ,ajout de la suppression de "$MNT"_flowdtmp2 (ligne 219)
+
+* m.flowdirline : ajout de la suppression de "$MNT"_flowdtmp3 dans boucle cleanup
+
+* m.sbw : modification ligne 554 de la suppression de "$SBV"_sbwtmp après passage dans m.pointline; la suppression a lieu après le if
+
+* m.sbw : ajout d'une commande v.build.polylines (ligne 702) pour gérer les cats des boundary
+
+* m.extractlineseg : ligne 315, modification du grep pour nom de colonne en layer 2 de polygone, grep + sed à la place d'un grep + cut
+
+* m.sbwhole : ajout d'une condition lors du patch quand plu de 200 sbv à patcher (la boucle était imparfaite)
+
+* pour les dépendances de m.toposu : problèmes grass6.4 RC04 qui n'accepte pas les majuscules pour les noms de paramètres, passage en minuscule pour tous les noms de paramètres
+
+* m.toposu : ajout dans la fonction clean de la suppression de $TMP.${PROG}.90
+
+20090803_V1C1.8
+===============
+* m.extractlineseg, m.seg, m.topogu, m.definput, m.toposu, m.toporeach: problèmes grass6.4 RC04 qui n'accepte pas les majuscules pour les noms de paramètres, passage en minuscule pour tous les noms de paramètres
+
+20090622_V1C1.7
+===============
+* m.sbw : ajout du flag -s pour création de points d'outlet a chaque confluence (comme SWAT)
+
+* m.toposu : correction lignes 1196, mauvais appel de commande rm 
+
+
+
+20090616_V1C1.6
+===============
+* m.seg : ajout de "_" (underscore) pour les noms des colonnes (qui aura la forme $NameColumn"_"$NUM) des input dans couche output. 
+
+* m.seg : modification de la  sécurité sur longueur max de nom de colonnes (max = 7 caractères)
+
+* m.dispolygseg : ligne 326, modification du grep qui récupère les niveaux de hiérarchie, devient plus sélectif (grep sur _$nb)
+
+* m.sliverpolygseg : ligne 325, modification du grep qui récupère les niveaux de hiérarchie, devient plus sélectif (grep sur _$nb)
+
+* m.hierapolygseg : lignes 227 et 284, modification du grep pour récupèrer niveau de hiérarchi (pour tenir compte de la modification effectué en m.seg, $NameColumn"_""$NUM")
+
+* m.extractlineseg: ajout de la fonctionnalité qui récupère la colonne identifiant de INPUT d'origine (qui est contenue dans layer 2 de POLYGON, et qui est en suffixe "_$NUM") et simplification de la partie sur la gestion de la table attributaire de OUTPUT
+
+* m.toporeach : modification des créations shp si flag -e (modif des options ogr2ogr) lignes 741 à 749
+
+* m.toposuneighbour : modification de la boucle clean; ajout de 2>/dev/null dans g.mremove -f 
+
+* m.toposu : ligne 1026, modification de l'appel de $TMP.${PROG}.48 dans v.db.update pour FlowCode
+
+* m.toposu : ligne 1042, modification suppression de $TMP.${PROG}.18 au lieu $TMP.${PROG}.19
+
+* m.topoman : suppression de la sécurité sur OUTPUT car pas d'OUTPUT
+
+* m.topoman : ligne 211, correction mauvais appel de $INPUTR
+
+
+20090615_V1C1.5
+===============
+* m.sliverpolygseg : suppression  # en fin de ligne(lignes 306 et 307) lors de la suppression puis l'ajout de la colonne $COLERASE (commandes quiet)
+
+* m.sliverpolygseg : correction bug mauvais appel de la table "$INPUT"_slivtmp1 dans par db.columns (ligne 282)
+
+* m.dispolygseg : correction bug mauvais appel de la table "$INPUT"_distmp1 dans par db.columns (ligne 283)
+
+* m.sliverpolygseg : correction bug dans flag -i, mauvais calcul des index (commande v.to.db)
+
+* m.sliverpolygseg : correction bug suppression "$INPUT"_slivtmp15 commande g.remove (ligne 730)
+
+* m.hierapolygseg : suppression de la sécurité sur FILE4 (dans partie sécurité input).
+
+* m.seg : ajout d'une sécurité sur longueur max de nom de colonnes et type de colonnes (type character interdit) pour option ID
+
+* m.seg : boucle de nettoyage dans fonction cleanup augmentée pour prise en compte de $TMP.${PROG}.23
+
+* m.sliverpolygseg : ligne 669, ajout d'une sécurité si $TMP.${PROG}.53 vide, pas de lancement de la procédure de dissolve et gestion de ELIMNO = 1 dans ce cas
+
+* m.sliverpolygseg : suppression de la gestion "$INPUT"_slivtmp2 dans la boucle while
+
+* m.dispolygseg : suppression  # en fin de ligne(lignes 307 et 308) lors de la suppression puis l'ajout de la colonne $COLERASE (commandes quiet)
+
+* m.dispolygseg : suppression de la gestion "$INPUT"_distmp2 dans la boucle while
+
+* m.dispolygseg : ligne 662, ajout d'une sécurité si $TMP.${PROG}.53 vide, pas de lancement de la procédure de dissolve et gestion de ELIMNO = 1 dans ce cas
+
+* m.dispolygseg : changement de noms des "$OUTPUT"_distmp* en "$INPUT"_distmp* en fin de script
+
+* m.colseg : correction bug exit ligne 239
+
+* m.segline : lignes 246 et 280, modification du region -d (set from default region) et non plus from INPUT
+
+* m.extractlineseg : correction bug suppression "$INPUT"_extractltmp* dans boucle cleanup
+
+* m.segline : lignes 320 et 321 ajout d'un thresh à 0.01 dans v.edit catdel et catadd.
+
+
+20090611_V1C1.4
+===============
+* m.snaplp : bug dans boucle sur partie 3 (insertion pt boundary polygone dans ligne). Ajout d'un v.edit pour supprimer tous points en double présents à la fin de la boucle for
+
+
+20090605_V1C1.3
+===============
+* tous les codes : modifications et corrections pour fichiers d'aide 
+
+* m.dispolyg : suppression  # en fin de ligne(lignes 292 et 293) lors de la suppression puis l'ajout de la colonne $COLERASE (commandes quiet)
+
+* m.disline : suppression  # en fin de ligne(lignes 277 et 278) lors de la suppression puis l'ajout de la colonne $COLERASE (commandes quiet)
+
+* m.disline : ajout suppression fichiers tmp $TMP.${PROG}.21,$TMP.${PROG}.22, $TMP.${PROG}.23 à la fin de la boucle for
+
+* m.disline : correction bug; ajout suppression fichier $TMP.${PROG}.33 en fin de boucle for
+
+20090605_V1C1.2
+===============
+
+* m.toposuchoice : mauvais appel de "$INPUT"_toposuchoicetmp (ligne 255)
+
+* m.toposu : modification export output par v.out.ogr. Flag e enlevé
+
+* m.toposu : bug mauvais appel destruction "$INPUT"_toposutmp37 (ligne 1235)
+
+20090604_V1C1.1
+===============
+* m.sbw : bug présence variable $INPUT alors que pas d'appel, cette variable doit s'appeler $SBV.
+
+* m.pointline : lignes 246 et 251; lors de la recherche du point de la ligne placé avant le point à projeter et de la recherche du point de la ligne placé après le point à projeter, dans les commandes v.db.select modification des signes > et < en >= et <= pour prendre en compte que le point à projeter peut avoir des coordonnées identiques à des points de la ligne déjà existants.
+
+* en lien avec la précédente modification, m.projectpl; ajout de la condition ($xA == $xB && $yA == $yB) , avec remplacement des coordonnées du point à projeter par les coordonnées du point A
+
+* m.sbwhole, ligne 369 correction d'un bug de mauvais appel due fichier tmp$TMP.${PROG}.24
+
+* m.sbwhole, modification de la boucle (ligne 382) for de suppression des fichiers "$SBV"_sbwholetmp"$w" (arrêt à <= 15)
+
+* m.sbwhole, ligne 413 : bug mauvais appel de copie de la couche "$SBV"_sbwholetmp_p_tt quand 1 seul sbv
+
+* m.sbwhole, lignes 659 à 666, remplacement du nom de "$SBV"_sbwtmp4 en "$SBV"_sbwtmp4a car "$SBV"_sbwtmp4 existait déjà (création en lignes 557 à 572)
+
+* m.sbwhole, modification de cleanup: boucle --> $TMP.${PROG}.24
+
+* m.sbw, fonction cleanup (ligne 205) ajout de la suppression des vecteurs "$MNT"_sbvwtmp*
+
+* m.sbw, bug overwrite mauvais appel de $SBV
+
+20090604_V1C1.0
+===============
+Début des benchmarks le 4 juin 2009 sur version 1C1.0
+
+

@@ -1,0 +1,194 @@
+#!/bin/bash
+############################################################################
+#
+# MODULE:       m.point
+# AUTHOR(S):    Michael Rabotin (rabotin@supagro.inra.fr)
+# PURPOSE:      copy of a point vector map into a more simple point vector map
+# REQUIREMENTS: m.testtype,
+#
+# COPYRIGHT:    (C) 2009 UMR LISAH - OpenFluid
+#
+#               This program is free software under the GNU General Public
+#               License (>=v2). Read the file COPYING that comes with GRASS
+#               for details.
+#
+#############################################################################
+
+#%Module
+#%  description: copy of a point vector map into a more simple point vector map
+#%END
+#%option
+#% key: input
+#% type: string
+#% gisprompt: old,vector,vector
+#% description: Input point vector
+#% key_desc : name
+#% required : yes
+#%END
+#%option
+#% key: output
+#% type: string
+#% gisprompt: new,vector,vector
+#% description: Output point vector
+#% key_desc : name
+#% required : yes
+#%END
+
+eval `g.gisenv`
+: ${GISDBASE?} ${LOCATION_NAME?} ${MAPSET?}
+
+if [ "$1" != "@ARGS_PARSED@" ] ; then
+  exec g.parser "$0" "$@"
+fi
+
+INPUT="$GIS_OPT_INPUT"
+OUTPUT="$GIS_OPT_OUTPUT"
+
+
+if  [ -z "$GISBASE" ]
+then
+	echo ""
+	echo "You must start GRASS to launch this program"
+	echo ""
+	exit 2
+fi
+
+#GRASS version testing, must be >= 6.3
+
+Gversion1=`g.version |cut -d" " -f2 |cut -d"." -f1`
+Gversion2=`g.version |cut -d" " -f2 |cut -d"." -f2`
+
+if [ $Gversion1 -ge 6 ];then
+	if [ $Gversion1 = 6 ] && [ $Gversion2 -lt 3 ];then 
+		g.message -e message="You must have GRASS version 6.3.0 or higher"
+		exit 2
+	fi
+else
+	g.message -e message="You must have GRASS version 6.3.0 or higher"
+	exit 2
+
+fi
+
+#awk testing
+if [ ! -x "`which awk`" ];then
+  g.message -e message="awk required, please install awk our gawk first"
+  exit 2
+fi
+
+#perl testing
+if [ ! -x "`which perl`" ];then
+  g.message -e message="perl required, please install perl first"
+  exit 2
+fi
+
+#test driver (dbf only accepted)
+if [ "`db.connect -p|head -n 1 |cut -d":" -f2 `" != "dbf" ]
+then
+	g.message -e message="Sorry, but only dbf driver accepted "
+  exit 2
+fi 
+
+# setting environment, so that awk works properly in all languages
+unset LC_ALL
+LC_NUMERIC=C
+export LC_NUMERIC
+
+# all above OK - proceed: set up temporary files
+TMP="`g.tempfile pid=$$`"
+if [ $? -ne 0 ] || [ -z "$TMP" ] ; then
+    echo "ERROR: Unable to create temporary files." 1>&2
+    exit 2
+fi
+rm -f $TMP
+PROG=`basename $0 | sed 's/\./_/g'`
+NOW=$(date +"%F-%X")
+LOGFILE="$PROG-$NOW.log"
+
+#cleanup procedure
+cleanup()
+{
+  \rm -f $TMP
+   rm -f $TMP.${PROG}
+   rm -f $TMP.${PROG}.1
+   rm -f $TMP.${PROG}.2
+   rm -f $TMP.${PROG}.3
+	if [ -e ~/$LOGFILE ] && [ ! -s ~/$LOGFILE ] ;then
+		rm -f ~/$LOGFILE
+	fi
+}
+
+# what to do in case of user break:
+exitprocedure()
+{
+  echo -e "\nUser break!"
+  cleanup
+  exit 2
+}
+# shell check for user break (signal list: trap -l)
+trap "exitprocedure" 2 3 15
+
+
+
+#dependancies testing
+if [ ! -x "`which m.testtype`" ];then
+  g.message -e message="m.testtype subscript required, please install it first"
+  exit 2
+fi
+
+#test if output vector map already exists
+eval `g.findfile element=vector file="$OUTPUT" `
+if [ "$file" ] ; then
+  if [ -z "$GRASS_OVERWRITE" ] || [ "$GRASS_OVERWRITE" -eq 0 ]; then
+    g.message -w message="<$OUTPUT> already exists in this mapset or in another mapset of this location. Use the --o flag to overwrite." 1>&2
+    exit 2
+  else
+    g.message -w message="<$OUTPUT>  already exists and will be overwritten"
+  fi
+fi
+
+#test if OUTPUT vector name is allowed
+v.in.region output=$OUTPUT --q  |grep -v "SQL" 2>$TMP.${PROG}.3
+	
+if [ -s "$TMP.${PROG}.3" ];then
+	g.message -w message="Illegal vector map name <$OUTPUT>" 1>&2
+    exit 2
+else
+	g.remove vect=$OUTPUT --q  
+fi
+
+
+# test if input exists
+
+g.findfile element=vector mapset=${MAPSET?} file=${INPUT} > /dev/null
+if [ $? -ne 0 ] ; then
+ g.message -e message="<$INPUT> vector doesn't exist !"
+ cleanup
+ exit 2
+fi
+
+m.testtype input=$INPUT > $TMP.${PROG} 2>>~/$LOGFILE
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+fi
+#if input vector map is not a point vector, exit program
+if [ "`cat $TMP.${PROG}`" != "point" ] ; then
+	g.message -e message="<$POINT> doesn't exist or isn't a vector point !!"
+	cleanup
+	exit 2
+fi
+
+
+
+v.out.ascii input=$INPUT output=$TMP.${PROG}.1 format=point  --q 2>>~/$LOGFILE
+v.in.ascii -t input=$TMP.${PROG}.1 output=$OUTPUT format=point fs='|' x=1 y=2 cat=0  --q 2>>~/$LOGFILE
+v.db.addtable map=$OUTPUT columns="x DOUBLE PRECISION,y DOUBLE PRECISION" --q 2>>~/$LOGFILE
+v.to.db map=$OUTPUT option=coor columns=x,y --q 2>>~/$LOGFILE
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+fi
+cleanup
+exit 0

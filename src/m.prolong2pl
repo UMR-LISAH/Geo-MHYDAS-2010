@@ -1,0 +1,67 @@
+#!/usr/bin/perl -w
+############################################################################
+#
+# MODULE:       m.prolong2pl
+# AUTHOR(S):    Michael Rabotin (rabotin@supagro.inra.fr)
+# PURPOSE:      Segment prolongation (for a desired distance) and coordinate calcul for new point
+# REQUIREMENTS: 
+#
+# COPYRIGHT:    (C) 2009 UMR LISAH - OpenFluid
+#
+#               This program is free software under the GNU General Public
+#               License (>=v2). Read the file COPYING that comes with GRASS
+#               for details.
+#
+#############################################################################
+
+
+use strict;
+use Math::Trig;
+use Math::BigFloat;
+use Getopt::Long;
+
+my ($infile1, $infile2, $outfile);
+
+GetOptions("input1=s", \$infile1, "input2=s", \$infile2, "output=s", \$outfile);
+
+if(!$infile1 or !$infile2 or !$outfile) {
+  print "Usage: $0 --input1=[filename] --input2=[filename] --output=[filename] \n";
+  exit 0;
+}
+
+open (FILE1,"$infile1");
+open (FILE2,"$infile2");
+open (FILE3, ">> $outfile");
+
+my ($D23,$D12,$x3,$y3,$cosalpha,$sinalpha);
+$D23=0.1;
+
+
+my($x1,$y1)=split / /,<FILE1>;
+close (FILE1);
+
+my($x2,$y2)=split / /,<FILE2>;
+close (FILE2);
+
+$D12=sqrt((($x2-$x1)**2)+(($y2-$y1)**2));
+
+
+	if ($x1 == $x2){
+		$x3=$x1+($D12+$D23);
+		$y3=$y1;
+	}
+	else{
+		$cosalpha=($x2-$x1)/$D12;
+		
+		$sinalpha=($y2-$y1)/$D12;
+		
+		$x3=$cosalpha*($D12+$D23)+$x1;
+		$y3=$sinalpha*($D12+$D23)+$y1;
+	}
+#truncation at 6 decmimals for x3 and y3 
+my $x33= sprintf("%.6f",$x3);
+my $y34= sprintf("%.6f",$y3);
+
+print FILE3 "$x33 $y34\n";
+close (FILE3);
+

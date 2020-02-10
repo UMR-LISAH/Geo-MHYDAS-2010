@@ -1,0 +1,155 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html><head>
+
+
+
+
+
+
+<title>GRASS GIS: m.seg</title>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<link rel="stylesheet" href="grassdocs.css" type="text/css">
+</head><body bgcolor="white">
+
+<img src="grass_logo.png" alt="GRASS logo"><hr size="6" align="center" noshade="noshade">
+
+<h2>NAME</h2>
+<em><b>m.seg</b></em>  - Segmentation Procedure
+<h2>KEYWORDS</h2>
+vector, segmentation, overlay, hierarchical order
+<h2>SYNOPSIS</h2>
+<b>m.seg</b><br>
+<b>m.seg help</b><br>
+<b>m.seg</b> [-<b>i</b>] <b>input</b>=<em>name</em>[,<i>name</i>,...] <b>output</b>=<em>name</em>  [<b>snap</b>=<em>float</em>]  <b>ID</b>=<em>string</em>[,<i>string</i>,...]  [<b>OUTPUT_ID</b>=<em>string</em>]   [--<b>overwrite</b>]  [--<b>verbose</b>]  [--<b>quiet</b>] 
+
+<h3>Flags:</h3>
+<dl>
+<dt><b>-i</b></dt>
+<dd>intersection overlay (default is union overlay)</dd>
+
+<dt><b>--overwrite</b></dt>
+<dd>Allow output files to overwrite existing files</dd>
+<dt><b>--verbose</b></dt>
+<dd>Verbose module output</dd>
+<dt><b>--quiet</b></dt>
+<dd>Quiet module output</dd>
+</dl>
+
+<h3>Parameters:</h3>
+<dl>
+<dt><b>input</b>=<em>name[,<i>name</i>,...]</em></dt>
+<dd>Input vector names (name separated by comma ','; in hierarchical order)</dd>
+
+<dt><b>output</b>=<em>name</em></dt>
+<dd>Output vector name</dd>
+
+<dt><b>snap</b>=<em>float</em></dt>
+<dd>Snap value in map units; default is 1</dd>
+
+<dt><b>ID</b>=<em>string[,<i>string</i>,...]</em></dt>
+<dd>Column Name of the ID for each vector map (name separated by comma ','; in hierarchical order)</dd>
+
+<dt><b>OUTPUT_ID</b>=<em>string</em></dt>
+<dd>ID column Name for the output vector; default is 'SELF_ID'</dd>
+
+</dl>
+
+
+<h2>DESCRIPTION</h2>
+<em>m.seg</em> allows the user to overlay several input layers in order to create
+one overlayed layer. The input layers are the landscape objects layers
+(reachs, plots, subwatersheds, soil horizons). The output layer is a
+combined layer of these inputs, it contains two attribute tables (the
+first table contains informations for the areal units and the second
+for the linear units). After using <em>m.seg</em>, it is recommended to clean the layer with <a href="m.dispolygseg.html">m.dispolygseg</a>, <a href="m.sliverpolygseg.html">m.sliverpolygseg</a> scripts.
+
+
+<h2>NOTES</h2>
+For additional informations concerning the overlay procedure, please read <em> Lagacherie, P. &amp; al, 1996 </em>. 
+<p><em>m.seg</em> script is able to overlay more than two vectors (and
+with no number limits); polygon and line vectors are accepted (but no
+point vectors). Vector topology must be correct to avoid geometry
+errors. The user must give a hierarchical order for each vector (See <em>Examples</em> for details)
+</p><p> Using flag <em> -I</em> allows the user to make intersection operation rather than union operation (See <em>Examples</em> to see differences between these operations)
+</p><p> The output vector will be a polygon vector with two attribute tables (two layers in GRASS vocabulary): layer 1 contains the column <em>OUTPUT_ID</em> ( column name to identify each output entity) and, for each input polygon vector, a column named <em>"ID_"</em> with hierarchical number (See <em>Examples</em> for details). Layer 2 contains information from the input line vector: for each input line vector, a column named <em>"ID_"</em> with hierarchical number (See <em>Examples</em> for details).
+
+
+</p><h2>EXAMPLES</h2>
+<h3> Segmentation procedure </h3>
+The input vectors are the following in hierarchical order:
+<p></p><dl>
+<p></p><dd>1- plots (polygon vector) : ID column name: plot_id </dd> <p></p>
+<p></p><dd>2- subwatersheds (polygon vector) : ID column name: subw_id </dd> <p></p>
+<p></p><dd>3- reachs (line vector) : ID column name: reach_id </dd> <p></p>
+<p></p><dd>4- soils (polygon vector) : ID columns name: soil_id </dd> <p></p>
+</dl>
+Creating seg1 output vector :
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.seg input=plot,subwatersheds,reachs,soils output=seg1 ID=plot_id,subw_id,reach_id,soil_id OUTPUT_ID=IDENS</pre></div>
+Showing columns in layer 1 (columns of the input polygon vectors):
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; db.describe -c table=seg1_1
+ncols: 5
+nrows: 607
+Column 1: cat:INTEGER:11
+Column 2: plot_id1:INTEGER:11
+Column 3: subw_id2:INTEGER:11
+Column 4: sil_id4:INTEGER:11
+Column 5: IDENS:INTEGER:11
+</pre></div>
+Showing columns in layer 2 (columns of the input line vector):
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; db.describe -c table=seg1_2
+ncols: 2
+nrows: 2456
+Column 1: cat:INTEGER:11
+Column 2: reachs_id3:INTEGER:11
+</pre></div>
+
+<h3> Difference in segmentation procedure with <em> flag -i</em> or without</h3>
+
+
+Creating seg1 output vector with <em>flag -i</em> (intersection operation):
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.seg -i input=plot,subwatersheds,reachs,soils output=seg1 ID=plot_id,subw_id,reach_id,soil_id</pre></div>
+
+Creating seg2 output vector without <em>flag -i</em> (union operation):
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.seg input=plot,subwatersheds,reachs,soils output=seg2 ID=plot_id,subw_id,reach_id,soil_id</pre></div>
+
+
+<p>
+</p><ul>
+<table><tbody><tr><td>
+<img src="m.seg-union.png" border="1">
+</td></tr>
+<tr><td align="center">
+<font size="-1"><em>Left: input vectors (black: plot boundaries; red: subwatershed boundaries; blue: reachs; brown: soil boundaries)  ; Center: output vector seg1 (intersection operation); Right: output seg2 vector (union operation) </em></font>
+</td></tr>
+</tbody></table>
+</ul>
+
+
+
+
+<h2>SEE ALSO</h2>
+<a href="m.colseg.html">m.colseg</a>, <a href="m.extractlineseg.html">m.extractlineseg</a>, <a href="m.dispolygseg.html">m.dispolygseg</a>, <a href="m.sliverpolygseg.html">m.sliverpolygseg</a>, <a href="m.toporeach.html">m.toporeach</a>, <a href="m.toposu.html">m.toposu</a>
+
+
+<h2>REFERENCES</h2>
+<p>Lagacherie, P., Moussa, R., Cormary, D., AND Molenat, J. 1996.
+Effect of DEM data source and sampling pattern on topographical
+parameters and on a topography-based hydrological model. <em>  In</em>
+"HYDROGIS'96. Application of Geographic Information System in Hydrology
+and Water Resources Management" (K. Kovar and H. P. Nachtnebel, eds.),
+pp. 191-200. IAHS, Vienna.
+
+
+
+</p><h2>AUTHORS</h2>
+Michael Rabotin, UMR LISAH, Montpellier, France
+<p>rabotin@supagro.inra.fr
+
+</p><p><em> Last Changed: </em> 21 July 2010
+</p>
+
+<p></p><hr>
+<P><a href="index.html">Main index</a> 
+<p>Copyright <a href="http://www.umr-lisah.fr/openfluid/index.php?page=welc&amp;lang=fr">UMR LISAH OpenFluid</a></p>
+
+</body></html>

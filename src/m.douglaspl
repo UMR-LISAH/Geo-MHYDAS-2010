@@ -1,0 +1,75 @@
+#!/usr/bin/perl -w
+############################################################################
+#
+# MODULE:       m.douglaspl
+# AUTHOR(S):    Michael Rabotin (rabotin@supagro.inra.fr)
+# PURPOSE:      Line nodes generalization (Douglas Peuker algorithm)
+# REQUIREMENTS: 
+#
+# COPYRIGHT:    (C) 2009 UMR LISAH - OpenFluid
+#
+#               This program is free software under the GNU General Public
+#               License (>=v2). Read the file COPYING that comes with GRASS
+#               for details.
+#
+#############################################################################
+
+
+#column order :cat,dist,lcat,along,x,y
+use strict;
+use Getopt::Long;
+
+my ($infile, $outfile1, $outfile2, $outfile3, $distmin);
+
+GetOptions("input=s", \$infile, "output1=s", \$outfile1, "output2=s", \$outfile2, "output3=s", \$outfile3, "dist=f", \$distmin);
+
+if(!$infile or !$outfile1 or !$outfile2 or !$outfile3 or !$distmin) {
+  print "Usage: $0 --input=[filename] --output1=[filename] --output2=[filename] --output3=[filename] --dist=[distance in map units]\n";
+  exit 0;
+}
+
+open (FILE1,"$infile");
+open (FILE3, ">> $outfile1");
+open (FILE4, ">> $outfile2");
+open (FILE5, ">> $outfile3");
+
+my @tab0=<FILE1>;
+close FILE1;
+chomp @tab0;
+chomp $distmin;
+my $Ntab0 = scalar(@tab0);
+
+# we keep the last points of the line to have the along0 value (which indicate the line length)
+
+my ($cat0,$dist0,$lcat0,$along0,$x0,$y0)=split / /,$tab0[$Ntab0-1];
+
+#we sort the table par dist crescent
+my @tab = sort {
+	my @champs_a = split / /,$a;
+	my @champs_b = split / /,$b;
+	$champs_a[1] <=> $champs_b[1]
+	} @tab0;
+
+my $Ntab = scalar(@tab);
+#we take the last point, which contains the longest distance 
+my ($cat,$dist,$lcat,$along,$x,$y)=split / /,$tab[$Ntab-1];
+
+#we verify if the distance between this point and the line is bigger than the threshold distance
+if ($dist < $distmin){
+#if this distance is inferior , we do nothing
+print FILE3 "ok\n";
+close FILE3;
+exit
+}
+else {
+#if the distance is supérior , creation of a file for cutting the line by this point
+#L <segment id> <line cat> <start offset> <end offset> [<side offset>]
+print FILE4 "L 1 $lcat 0 $along\n";
+print FILE4 "L 2 $lcat $along $along0\n";
+close FILE4;
+print FILE5 "$x $y\n";
+close FILE5;
+exit
+}
+
+

@@ -1,0 +1,345 @@
+#!/bin/bash
+############################################################################
+#
+# MODULE:       m.pointline
+# AUTHOR(S):    Michael Rabotin (rabotin@supagro.inra.fr)
+# PURPOSE:      snap point on vector line
+# REQUIREMENTS: m.testtype,m.splicepl,m.invtripl,m.tripl,m.projectpl
+#
+# COPYRIGHT:    (C) 2009 UMR LISAH - OpenFluid
+#
+#               This program is free software under the GNU General Public
+#               License (>=v2). Read the file COPYING that comes with GRASS
+#               for details.
+#
+#############################################################################
+
+#%Module
+#%  description: snap point on vector line
+#%END
+#%option
+#% key: point
+#% type: string
+#% gisprompt: old,vector,vector
+#% description: Input vector point
+#% key_desc : name
+#% required : yes
+#%END
+#%option
+#% key: line
+#% type: string
+#% gisprompt: old,vector,vector
+#% description: Input vector line
+#% key_desc : name
+#% required : yes
+#%END
+#%option
+#% key: output
+#% type: string
+#% gisprompt: new,vector,vector
+#% description: Output vector point
+#% key_desc : name
+#% required : yes
+#%END
+#%option
+#% key: snap
+#% type: double
+#% description: snap distance (in map units)
+#% required : yes
+#%END
+
+
+
+
+eval `g.gisenv`
+: ${GISDBASE?} ${LOCATION_NAME?} ${MAPSET?}
+
+if [ "$1" != "@ARGS_PARSED@" ] ; then
+  exec g.parser "$0" "$@"
+fi
+
+LINE="$GIS_OPT_LINE"
+POINT="$GIS_OPT_POINT"
+OUTPUT="$GIS_OPT_OUTPUT"
+SNAP="$GIS_OPT_SNAP"
+
+
+if  [ -z "$GISBASE" ]
+then
+  echo ""
+  echo "You must start GRASS to launch this program"
+  echo ""
+  exit 2
+fi
+
+#GRASS version testing, must be >= 6.3
+
+Gversion1=`g.version |cut -d" " -f2 |cut -d"." -f1`
+Gversion2=`g.version |cut -d" " -f2 |cut -d"." -f2`
+
+if [ $Gversion1 -ge 6 ];then
+	if [ $Gversion1 = 6 ] && [ $Gversion2 -lt 3 ];then 
+		g.message -e message="You must have GRASS version 6.3.0 or higher"
+		exit 2
+	fi
+else
+	g.message -e message="You must have GRASS version 6.3.0 or higher"
+	exit 2
+
+fi
+
+#awk testing
+if [ ! -x "`which awk`" ];then
+  g.message -e message="awk required, please install awk our gawk first"
+  exit 2
+fi
+
+#perl testing
+if [ ! -x "`which perl`" ];then
+  g.message -e message="perl required, please install perl first"
+  exit 2
+fi
+
+#test driver (dbf only accepted)
+if [ "`db.connect -p|head -n 1 |cut -d":" -f2 `" != "dbf" ]
+then
+	g.message -e message="Sorry, but only dbf driver accepted "
+  exit 2
+fi 
+
+# setting environment, so that awk works properly in all languages
+unset LC_ALL
+LC_NUMERIC=C
+export LC_NUMERIC
+
+# all above OK - proceed: set up temporary files
+TMP="`g.tempfile pid=$$`"
+if [ $? -ne 0 ] || [ -z "$TMP" ] ; then
+    echo "ERROR: Unable to create temporary files." 1>&2
+    exit 2
+fi
+rm -f $TMP
+PROG=`basename $0 | sed 's/\./_/g'`
+NOW=$(date +"%F-%X")
+LOGFILE="$PROG-$NOW.log"
+
+#cleanup procedure
+cleanup()
+{
+  \rm -f $TMP
+   rm -f $TMP.${PROG}
+   for ((u=1;u<=14;u+=1))
+  do
+    rm -f $TMP.${PROG}.$u
+  done
+
+  g.mremove -f vect="$POINT"_pointlinetmp* --q
+  if [ -e ~/$LOGFILE ] && [ ! -s ~/$LOGFILE ] ;then
+		rm -f ~/$LOGFILE
+	fi
+  
+}
+
+# what to do in case of user break:
+exitprocedure()
+{
+  echo -e "\nUser break!"
+  cleanup
+  exit 2
+}
+# shell check for user break (signal list: trap -l)
+trap "exitprocedure" 2 3 15
+
+
+
+# dependancies testing
+if [ ! -x "`which m.testtype`" ];then
+  g.message -e message="m.testtype subscript required, please install it first"
+  exit 2
+fi
+
+if [ ! -x "`which m.splicepl`" ];then
+  g.message -e message="m.splicepl subscript required, please install it first"
+  exit 2
+fi
+
+if [ ! -x "`which m.invtripl`" ];then
+  g.message -e message="m.invtripl subscript required, please install it first"
+  exit 2
+fi
+
+if [ ! -x "`which m.tripl`" ];then
+  g.message -e message="m.tripl subscript required, please install it first"
+  exit 2
+fi
+
+if [ ! -x "`which m.projectpl`" ];then
+  g.message -e message="m.projectpl subscript required, please install it first"
+  exit 2
+fi
+
+#test if output vector map already exists
+eval `g.findfile element=vector file="$OUTPUT" `
+if [ "$file" ] ; then
+  if [ -z "$GRASS_OVERWRITE" ] || [ "$GRASS_OVERWRITE" -eq 0 ]; then
+    g.message -w message="<$OUTPUT> already exists in this mapset or in another mapset of this location. Use the --o flag to overwrite." 1>&2
+    exit 2
+  else
+    g.message -w message="<$OUTPUT>  already exists and will be overwritten"
+  fi
+fi
+
+#test if OUTPUT vector name is allowed
+v.in.region output=$OUTPUT --q  |grep -v "SQL" 2>$TMP.${PROG}.14
+	
+if [ -s "$TMP.${PROG}.14" ];then
+	g.message -w message="Illegal vector map name <$OUTPUT>" 1>&2
+    exit 2
+else
+	g.remove vect=$OUTPUT --q  
+fi
+
+
+
+#test if input temporary vector map already exist
+
+g.mlist type=vect pattern="$POINT"_pointlinetmp*  > $TMP.${PROG}
+if [ -s "$TMP.${PROG}" ];then
+  g.message -w message="<$POINT>_pointlinetmp name for temporay vector files is already used in this mapset or in another mapset of this location"
+  cleanup
+  exit 2
+
+fi
+
+g.findfile element=vector mapset=${MAPSET?} file=${LINE} > /dev/null
+if [ $? -ne 0 ] ; then
+ g.message -e message="<$LINE> vector doesn't exist !"
+ cleanup
+ exit 2
+fi
+
+m.testtype input=$LINE > $TMP.${PROG}.1 
+
+#if input vector map is not a line vector, exit program
+if [ "`cat $TMP.${PROG}.1`" != "line" ] ; then
+	g.message -e message="<$LINE> doesn't exist or isn't a vector line !!"
+	cleanup
+	exit 2
+fi
+
+g.findfile element=vector mapset=${MAPSET?} file=${POINT} > /dev/null
+if [ $? -ne 0 ] ; then
+ g.message -e message="<$POINT> vector doesn't exist !"
+ cleanup
+ exit 2
+fi
+
+m.testtype input=$POINT > $TMP.${PROG}.2
+
+#if input vector map is not a point vector, exit program
+if [ "`cat $TMP.${PROG}.2`" != "point" ] ; then
+	g.message -e message="<$POINT> doesn't exist or isn't a vector point !!"
+	cleanup
+	exit 2
+fi
+
+
+if [ "`echo $SNAP |grep "[[:digit:]]" | wc -c`" = "0" ] ;then
+        g.message -e message="SNAP Distance value isn't numeric !!"
+        cleanup
+        exit 2
+fi
+
+if [ "`echo $SNAP |grep "[[:alpha:]]" | wc -c`" != "0" ] ;then
+	g.message -e message="SNAP Distance value isn't numeric !!"
+	cleanup
+	exit 2
+fi
+
+
+# working on POINT
+g.copy vect=$POINT,"$POINT"_pointlinetmp --q 2>>~/$LOGFILE
+v.db.connect -d map="$POINT"_pointlinetmp --q 2>>~/$LOGFILE
+rm -f $GISDBASE/$LOCATION_NAME/$MAPSET/dbf/"$POINT"_pointlinetmp.dbf 2>>~/$LOGFILE
+v.db.addtable map="$POINT"_pointlinetmp columns="x DOUBLE PRECISION,y DOUBLE PRECISION,catto INTEGER,distto DOUBLE PRECISION,along DOUBLE PRECISION" --q 2>>~/$LOGFILE
+v.to.db map="$POINT"_pointlinetmp type=point option=coor units=me column=x,y --q 2>>~/$LOGFILE
+v.distance from="$POINT"_pointlinetmp to=$LINE from_type=point to_type=line from_layer=1 to_layer=1 upload=cat,dist,to_along column=catto,distto,along  --q 2>>~/$LOGFILE
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+fi
+# working on  LINE
+v.to.points -v input=$LINE output="$POINT"_pointlinetmp2 type=line  --q 2>>~/$LOGFILE
+v.db.addcol map="$POINT"_pointlinetmp2 layer=2 columns="x double precision,y double precision"  --q 2>>~/$LOGFILE
+v.to.db map="$POINT"_pointlinetmp2 layer=2 type=point option=coor units=me column=x,y --q 2>>~/$LOGFILE
+
+
+#extraction of points of "$POINT"_pointlinetmp with distance  >0 and to_dist < $SNAP
+v.db.select -c map="$POINT"_pointlinetmp layer=1 column=cat,catto,along,x,y where="(distto > 0.001 AND distto < $SNAP)" fs=" " nv=0 --q > $TMP.${PROG}.3 2>>~/$LOGFILE
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+fi
+#for each points of  $TMP.${PROG}.3
+if [ -s "$TMP.${PROG}.3" ] ;then
+  wc -l $TMP.${PROG}.3 |cut -d" " -f1 > $TMP.${PROG}.4 2>>~/$LOGFILE
+  typeset -i nb2
+  nb2=`cat $TMP.${PROG}.4`
+  for ((a=1;a<=$nb2;a+=1));do
+    m.splicepl $a $TMP.${PROG}.3 > $TMP.${PROG}.5 2>>~/$LOGFILE
+    cut -d" " -f4,5 $TMP.${PROG}.5 > $TMP.${PROG}.6 2>>~/$LOGFILE
+    #searching point of the line which is located before the projected point 
+    v.db.select -c map="$POINT"_pointlinetmp2 column=cat,x,y,along layer=2 where="lcat=`cat $TMP.${PROG}.5|cut -d" " -f2` AND along <= `cat $TMP.${PROG}.5  |cut -d" " -f3`" fs=" " nv=0  --q > $TMP.${PROG}.7 2>>~/$LOGFILE
+    m.invtripl --input=$TMP.${PROG}.7 --output=$TMP.${PROG}.8 --col=3 2>>~/$LOGFILE
+    head -n 1 $TMP.${PROG}.8 |cut -d" " -f2,3 > $TMP.${PROG}.9 2>>~/$LOGFILE
+	if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+	fi
+  #searching point of the line which is located after the projected point 
+    v.db.select -c map="$POINT"_pointlinetmp2 column=cat,x,y,along layer=2 where="lcat=`cat $TMP.${PROG}.5|cut -d" " -f2` AND along >= `cat $TMP.${PROG}.5  |cut -d" " -f3`" nv=0 fs=" "  --q > $TMP.${PROG}.10 2>>~/$LOGFILE
+    m.tripl --input=$TMP.${PROG}.10 --output=$TMP.${PROG}.11 --col=3 2>>~/$LOGFILE
+    head -n 1 $TMP.${PROG}.11 |cut -d" " -f2,3 > $TMP.${PROG}.12 2>>~/$LOGFILE
+
+    #writing coordiantes  xA yA xM yM xB yB
+    echo "`cat $TMP.${PROG}.9` `cat $TMP.${PROG}.6` `cat $TMP.${PROG}.12`" > $TMP.${PROG}.13 2>>~/$LOGFILE
+
+    m.projectpl --input=$TMP.${PROG}.13 --output=$TMP.${PROG}.14 --dist=$SNAP 2>>~/$LOGFILE
+	if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+	fi
+    #if  $TMP.${PROG}.14 exist, moving the point
+    if [ -e "$TMP.${PROG}.14" ];then
+      #we make the differences between ending coordinate et starting coordinate
+      echo "`cat $TMP.${PROG}.14|cut -d" " -f1 ` `cat $TMP.${PROG}.6|cut -d" " -f1`"|awk '{print $1-$2}' > $TMP.${PROG}.17 2>>~/$LOGFILE
+      echo "`cat $TMP.${PROG}.14|cut -d" " -f2 ` `cat $TMP.${PROG}.6|cut -d" " -f2`"|awk '{print $1-$2}' > $TMP.${PROG}.18 2>>~/$LOGFILE
+      #moving the point in  "$POINT"_pointlinetmp
+      v.edit map="$POINT"_pointlinetmp tool=move coord=`cat $TMP.${PROG}.6|cut -d" " -f1`,`cat $TMP.${PROG}.6|cut -d" " -f2` thresh=0.1 move=`cat $TMP.${PROG}.17`,`cat $TMP.${PROG}.18` --q 2>>~/$LOGFILE
+    
+    fi
+    rm -f $TMP.${PROG}.5 $TMP.${PROG}.6 $TMP.${PROG}.7 $TMP.${PROG}.8 $TMP.${PROG}.9 $TMP.${PROG}.10 $TMP.${PROG}.11
+    rm -f $TMP.${PROG}.12 $TMP.${PROG}.13 $TMP.${PROG}.14 $TMP.${PROG}.17 $TMP.${PROG}.18
+	if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+	fi
+  done
+  v.db.dropcol map="$POINT"_pointlinetmp column=catto --q 2>>~/$LOGFILE
+  v.db.dropcol map="$POINT"_pointlinetmp column=distto --q 2>>~/$LOGFILE
+  v.db.dropcol map="$POINT"_pointlinetmp column=along --q 2>>~/$LOGFILE
+  g.copy vect="$POINT"_pointlinetmp,$OUTPUT --q 2>>~/$LOGFILE
+
+fi
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+fi
+cleanup
+exit 0

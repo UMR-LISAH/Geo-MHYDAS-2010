@@ -1,0 +1,324 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>GRASS GIS: m.toposu</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<link rel="stylesheet" href="grassdocs.css" type="text/css">
+</head>
+<body bgcolor="white">
+
+<img src="grass_logo.png" alt="GRASS logo"><hr align=center size=6 noshade>
+
+<h2>NAME</h2>
+<em><b>m.toposu</b></em>  - Topology calculation for surface units 
+<h2>KEYWORDS</h2>
+vector, topology, areal units, MHYDAS
+<h2>SYNOPSIS</h2>
+<b>m.toposu</b><br>
+<b>m.toposu help</b><br>
+<b>m.toposu</b> [-<b>canbsldz</b>] <b>input</b>=<em>name</em> <b>output</b>=<em>name</em>  <b>dem</b>=<em>name</em>  [<b>hydro</b>=<em>name</em>]   [<b>inputman</b>=<em>name</em>]   [<b>gu</b>=<em>name</em>]  <b>ID</b>=<em>string</em>  [<b>IDHYDRO</b>=<em>string</em>]   [<b>POHYDRO</b>=<em>string</em>]   [<b>IDGU</b>=<em>string</em>]   [<b>step</b>=<em>float</em>]   [<b>distreach</b>=<em>float</em>]   [<b>slop_val</b>=<em>float</em>]   [<b>colz</b>=<em>string</em>]   [<b>ID_OUT</b>=<em>string</em>]   [<b>AREA_OUT</b>=<em>string</em>]   [<b>SLOPE_OUT</b>=<em>string</em>]   [<b>FCDE_OUT</b>=<em>string</em>]   [<b>FID_OUT</b>=<em>string</em>]   [<b>FDIST_OUT</b>=<em>string</em>]   [<b>PCSSORD_OUT</b>=<em>string</em>]   [<b>COMMENT_OUT</b>=<em>string</em>]   [<b>GUID_OUT</b>=<em>string</em>]   [--<b>overwrite</b>]  [--<b>verbose</b>]  [--<b>quiet</b>] 
+
+<h3>Flags:</h3>
+<DL>
+<DT><b>-c</b></DT>
+<DD>calculate altitude with one pixel on centroid for linear feature; default (no flag c) is mean feature altitude on centroid</DD>
+
+<DT><b>-a</b></DT>
+<DD>calculate altitude with one pixel on centroid for areal feature; default (no flag a and no flag n) is mean feature altitude on centroid</DD>
+
+<DT><b>-n</b></DT>
+<DD>calculate altitude with D-8-like neighbours on centroid for areal feature; default (no flag a and no flag n) is mean feature altitude on centroid</DD>
+
+<DT><b>-b</b></DT>
+<DD>neighbouring research with feature boundaries and one contact point ; default (no flag b) is classical (D8 modified) neighbouring research</DD>
+
+<DT><b>-s</b></DT>
+<DD>down neighbour choice by slope; default (no flag s) is down neighbour choice by difference altitude</DD>
+
+<DT><b>-l</b></DT>
+<DD>Treatment of the topology loops; default is no</DD>
+
+<DT><b>-d</b></DT>
+<DD>create output_dir layer (line topological direction layer between surface units centroids)</DD>
+
+<DT><b>-z</b></DT>
+<DD>join z attribute from INPUT for areal feature (use colz column);default (no flag a, no flag n and no flag z) is mean feature altitude on centroid</DD>
+
+<DT><b>--overwrite</b></DT>
+<DD>Allow output files to overwrite existing files</DD>
+<DT><b>--verbose</b></DT>
+<DD>Verbose module output</DD>
+<DT><b>--quiet</b></DT>
+<DD>Quiet module output</DD>
+</DL>
+
+<h3>Parameters:</h3>
+<DL>
+<DT><b>input</b>=<em>name</em></DT>
+<DD>Input polygon vector name</DD>
+
+<DT><b>output</b>=<em>name</em></DT>
+<DD>Output polygon vector name</DD>
+
+<DT><b>dem</b>=<em>name</em></DT>
+<DD>Input DEM name</DD>
+
+<DT><b>hydro</b>=<em>name</em></DT>
+<DD>Input line hydrologic vector name</DD>
+
+<DT><b>inputman</b>=<em>name</em></DT>
+<DD>Input line direction vector name (manual topology)</DD>
+
+<DT><b>gu</b>=<em>name</em></DT>
+<DD>Input ground water vector name</DD>
+
+<DT><b>ID</b>=<em>string</em></DT>
+<DD>ID INPUT column name</DD>
+
+<DT><b>IDHYDRO</b>=<em>string</em></DT>
+<DD>ID HYDRO column name</DD>
+
+<DT><b>POHYDRO</b>=<em>string</em></DT>
+<DD>Column name of the Process Order of HYDRO objects</DD>
+
+<DT><b>IDGU</b>=<em>string</em></DT>
+<DD>ID Ground Water column name</DD>
+
+<DT><b>step</b>=<em>float</em></DT>
+<DD>distance (in meters) between each slope direction inside a SU (boundaries and one contact point topology); needed for flag b</DD>
+
+<DT><b>distreach</b>=<em>float</em></DT>
+<DD>distance in meters for a possible contact between a SU and a reach</DD>
+
+<DT><b>slop_val</b>=<em>float</em></DT>
+<DD>Replacement value for null or negative calculated slope (must be > 0; default value is 0.0001)</DD>
+
+<DT><b>colz</b>=<em>string</em></DT>
+<DD>id z attribute column name (for flag z)</DD>
+
+<DT><b>ID_OUT</b>=<em>string</em></DT>
+<DD>id OUTPUT column name</DD>
+<dd>Default: <em>SELF_ID</em></dd>
+
+<DT><b>AREA_OUT</b>=<em>string</em></DT>
+<DD>AREA OUTPUT column name</DD>
+<dd>Default: <em>USR_AREA</em></dd>
+
+<DT><b>SLOPE_OUT</b>=<em>string</em></DT>
+<DD>SLOPE OUTPUT column name</DD>
+<dd>Default: <em>USR_SLOP</em></dd>
+
+<DT><b>FCDE_OUT</b>=<em>string</em></DT>
+<DD>Flow Code OUTPUT column name</DD>
+<dd>Default: <em>FLOW_CDE</em></dd>
+
+<DT><b>FID_OUT</b>=<em>string</em></DT>
+<DD>Flow ID OUTPUT column name</DD>
+<dd>Default: <em>FLOW_ID</em></dd>
+
+<DT><b>FDIST_OUT</b>=<em>string</em></DT>
+<DD>Flow Distance OUTPUT column name</DD>
+<dd>Default: <em>FLOW_DST</em></dd>
+
+<DT><b>PCSSORD_OUT</b>=<em>string</em></DT>
+<DD>Process Order OUTPUT column name</DD>
+<dd>Default: <em>PCSS_ORD</em></dd>
+
+<DT><b>COMMENT_OUT</b>=<em>string</em></DT>
+<DD>Commentary OUTPUT column name</DD>
+<dd>Default: <em>COMMENT</em></dd>
+
+<DT><b>GUID_OUT</b>=<em>string</em></DT>
+<DD>ID GU OUTPUT column name</DD>
+<dd>Default: <em>EXHGW_ID</em></dd>
+
+</DL>
+
+<h2>DESCRIPTION</h2>
+<em>m.toposu</em> allows the user to calculate the oriented topology for an areal units layer. This topology is made for the MHYDAS model. Several options are possible, please read carefully the following paragraphs for choosing the right options for your calculations.
+
+
+<h2>NOTES</h2>
+<h4>Input and output layers </h4>
+The input layer can be created by <a href="m.seg.html">m.seg</a>, but <em>m.toposu</em> script can also accept a simple polygon layer (just be sure that in that case layer geometry and topology are correct). The output layer will contain the following columns (columns are created during this process):
+<dd>- <em>$ID_OUT</em> : uniq Object ID </dd> 
+<dd>- <em>$AREA_OUT</em> : Area (square meters)</dd> 
+<dd>- <em>$SLOPE_OUT</em> : Slope (m/m)</dd> 
+<dd>- <em>$FCDE_OUT</em> : Downstream feature type unit (R for reach segment and S for surface unit) for surface exchange  </dd> 
+<dd>- <em>$FID_OUT</em> : ID unit for surface exchange  </dd> 
+<dd>- <em>$FDIST_OUT</em> : Distance (m) between centroids of the unit and its downstream unit  </dd> 
+<dd>- <em>$PCSSORD_OUT</em> : Object Process Order  </dd> 
+<dd>- <em>$GUID_OUT</em> : ID unit for underground exchanges  </dd> 
+<dd>- <em>$COMMENT_OUT</em> : Commentary </dd> 
+<br><br>
+
+If the user wants to have xml files or fluidx files for the OpenFluid version 1.5 or superior, please use <a href="m.definput.html">m.definput</a> to create these files.
+<br><br>
+Flag <em>-d</em> allows the user to create the line topological direction layer which links surface units centroids (rooted topological tree); the layer will have <em>OUTPUT</em>_dir name.
+<br><br>
+Calculated slopes are always positive (no negative or null value); for negative or null slopes, user can manage its own value by <em>slop_val</em> option (default value is 0.0001).
+<br><br>
+<em>$FDIST_OUT</em> parameter is calculated with x,y and z coordinates of centroids of the linear or areal units (AND not only with x and y coordinates). If using Flag <em>-d</em>, differences can appear between <em>$FDIST_OUT</em> parameter and length of linear features of the topological direction layer because of taking account into the z coordinate of the points in <em>$FDIST_OUT</em> parameter calculation.
+
+<h4>Concerning reach network </h4>
+The <em>HYDRO</em> layer is optional; if the user provides it, the layer must be created by <a href="m.toporeach.html">m.toporeach</a>. The layer must contain the following columns which are needed for this procedure: 
+<dd>- <em>IDHYDRO</em> : unique Hydro object ID </dd> 
+<dd>- <em>POHYDRO</em> : Hydro object Process Order </dd> 
+<br><br>
+<b> DISTREACH option : </b>
+<br>
+The user can set the <em>distreach</em> value which allows to have a buffer distance between areal unit boundaries and Hydro objects. Even if a Hydro object is not a right topological neighbour, the <em>distreach</em> allows to consider it like a neighbour.
+
+<p>
+</p><ul>
+<table><tbody><tr><td>
+<img src="m.toposu_distreach.png" border="1">
+</td></tr>
+<tr><td align="center">
+<font size="-1"><em>Potential topological neighbours without distreach (left) ; Potential topological neighbours with distreach (right)</em></font>
+</td></tr>
+</tbody></table>
+</ul>
+
+On the left figure, without <em>distreach</em> option, the topological neighbours of the unit number 2 are the units 1 and 3. Even if the reach 4 is near the boundary of the unit 2, this reach will not be found by the algorithm because it is not a topological neighbour. On the right figure, if distance <em>d</em> (which represents the distance between reach segment and boundary of the unit 2) is smaller than the <em>distreach</em> value , reach 4 is considered by the algorithm as a topological neighbour of unit 2. The option is usefull when the geometry of these linear objects don't coincide exactly with polygon boundaries (due to different digitalizations).
+
+<br><br>
+<b>Flag C : </b><br>
+<em>m.toposu</em> needs to know reach segment elevation. Two options are possible to calculate these values with the help of DEM : if flag <em>c</em> is set, just the one pixel on centroid reach is used to know the elevation of reach. If this flag is not set, all the DEM pixels which are in contact with the whole reach are used to calculate the mean elevation of the reach.
+
+<p>
+</p><ul>
+<table><tbody><tr><td>
+<img src="m.toposu_flagC-NoC.png" border="1">
+</td></tr>
+<tr><td align="middle">
+<font size="-1"><em>Flag c set: pixel in contact with reach centroid is only used (left) ; Flag c not set: pixels in contact whith whole reach are used (right)</em></font>
+</td></tr>
+</tbody></table>
+</ul>
+
+
+<h4>Concerning groundwater layer </h4>
+Groundwater layer is optional but if the user wants the underground-surface topology, <em>GU</em> and <em>IDGU</em> (unique ID Groundwater Object column name) must be provided. Topological relations are based on the following spatial analysis : for each SU centroid, algorithm indicates which GU polygon contains this point. 
+
+<h4> Options for topology parametrization</h4>
+<b>INPUTMAN option : </b>
+<br>
+This algorithm use the difference elevation between SU to calculate oriented topology, which is based on DEM values. If the user doesn't want to use DEM values for the whole spatial domain or part of it, he can provided personal oriented topology preferences. If <em>INPUTMAN</em> layer is provided the algorithm considers this layer in priority to create oriented topology. For SU which aren't concerned by <em>INPUTMAN</em> orientation, the DEM value is used to find the downstream neighbour. With this option, the user can have : a whole automatized oriented topology calculation with DEM (with no <em> INPUTMAN</em> layer provided), a hybrid procedure (with a manual topology for part of the spatial domain which is concerned by <em>INPUTMAN</em> orientation and with DEM values for the rest of the domain) or a whole manual procedure (if <em>INPUTMAN</em> orientations concerned the whole domain). 
+<em>INPUTMAN</em> layer is a simple linear layer : to indicate orientation topology between two units (areal to areal or areal to linear), the user just "draws" a line which crosses the two units (see following figure for details); just be careful to the line orientations.
+
+<p>
+</p><ul>
+<table><tbody><tr><td>
+<img src="m.toposu_man.png" border="1">
+</td></tr>
+<tr><td align="center">
+<font size="-1"><em>INPUTMAN layer (in red arrows), SU layer (in grey color) and RS layer (in blue lines)</em></font>
+</td></tr>
+</tbody></table>
+</ul>
+
+<em>INPUTMAN</em> layer is represented by the red arrows : unit 15 has the unit 14 which is its  downstream unit because a red arrow crosses these two units, and unit 14 go into the reach (<em> INPUTMAN</em> is used with <em>distreach</em> value to find which reach segment is near the end of the arrow). Unit 17 has no arrow to find its downstream unit, so the DEM value will be used to find it.
+<br><br>
+<b>SU elevation using flags A, N or Z : </b><br>
+Three choices to calculate SU elevation are possible (see following figure to detail) : 
+<dd>- Flag <em>A</em> is set : just the DEM pixel on contact with SU centroid is used to calculate SU elevation</dd> 
+<dd>- Flag <em>N</em> is set : the DEM pixel on contact with SU centroid and its 8 neighbours are used to calculate SU elevation</dd>
+<dd>- Flag <em>Z</em> is set : using the  <em>colz</em> option, the user can provided a vector with z value already stored; no altitude calculation</dd>  
+<dd>- No Flags  set (default method) : the whole DEM pixels in contact with the SU are used to calculate the SU elevation</dd> 
+
+<p>
+</p><ul>
+<table><tbody><tr><td>
+<img src="m.toposu_flagNA.png" border="1">
+</td></tr>
+<tr><td align="center">
+<font size="-1"><em>Flag A set (left) ; Flag N set (middle) ; Flags A and N NOT set, default method (right)</em></font>
+</td></tr>
+</tbody></table>
+</ul>
+
+<br><br>
+<b>Neighbouring research with Flag B : </b><br>
+Two choices are possible to find downstream neighbours of a unit (See following figure for details):
+<dd>- Flag <em>B</em> is set : For each unit, in a first step, the lowest point on unit boundary (in comparison to centroid elevation) is found, and in a second step, the algorithm searches which neighbouring unit (linear or areal) share this point. <em>step</em> option is used to create virtual points along boundaries (<em>step</em> value is the distance between each point). This method is quite slow, especially if  <em>step</em> value is small. 
+<dd>- Flag <em>B</em> is NOT set (default method) : For each unit, the algorithm searches all neighbours (linear and areal) and choose the downstream unit which has the tallest elevation difference.
+
+
+<p>
+</p><ul>
+<table><tbody><tr><td>
+<img src="m.toposu_flagB-NoB.png" border="1">
+</td></tr>
+<tr><td align="center">
+<font size="-1"><em>Flag B set (left) ; Flags B NOT set, default method (right)</em></font>
+</td></tr>
+</tbody></table>
+</ul>
+On left figure, using Flag B,  grey dashed arrows represent the whole potential directions, the black plain arrow the tallest elevation difference. 
+The black dashed arrow shows the topology connection between the centroid of this unit and the centroid of its downstream unit. On right figure, when Flag B is not set, labels are elevation values : even if the tallest elevation difference could be between the grey unit and the unit with 78 m elevation; the chosen direction is between the grey unit and the blue reach segment (reach segment in this case has the priority ahead of this lowest neighbour unit)
+
+<br><br>
+<b>Downstream unit choice with Flag S : </b><br>
+The downstream unit choice is made with two possibilities : 
+<dd>- Flag <em>S</em> is set : the slope between unit centroid (in case of Flag <em>B</em> no set) or between unit centroid and points on boundary (in case of Flag <em>B</em> is set) is calculated; and tallest slope is chosen to identify the downstream unit. 
+<dd>- Flag <em>S</em> is NOT set : the downstream unit is chosen by calculating only the tallest elevation difference value (distance between points is not taken into account).
+
+
+
+<h4> Concerning loop treatment </h4>
+Oriented topology relations need to build a perfect rooted tree. After calculting oriented topology for each areal unit, loops between units can appear (due to low quality DEM or reach network between units missed out) : these relations can be between two or more units (i.e. in the left following figure, the unit 6 has as downstream unit the unit 5, and the unit 5 the unit 6). Using Flag <em>L</em> allows to treat these loops with the following steps : 
+<dd>1. Identify the clusters of areal units involved in loops (left following figure),
+<dd>2. Merge these areal units into a single areal entity (middle following figure),
+<dd>3. Select the neighboring unit of this entity with the greatest decrease in elevation,
+<dd>4. Eliminate the loops by forcing the areal unit(s) of the cluster that share a boundary with the selected unit to flow in this unit (right following figure),
+<dd>5. Repeat 1 through 4 until no loops remain.
+<br><br>
+
+<p>
+</p><ul>
+<table><tbody><tr><td>
+<img src="m.toposu_loop.png" border="1">
+</td></tr>
+<tr><td align="center">
+<font size="-1"><em>Topology before loop treatment (left) ; Step 2 of the loop treatment (middle); Step 4 of the loop treatment (right)</em></font>
+</td></tr>
+</tbody></table>
+</ul>
+
+
+Treated loops are known and, after treatment, if the same loop is met again, procedure is stopped with warning message for the user.
+
+
+<h2>EXAMPLES</h2>
+<h4> Using DEM value for whole spatial domain</h4>
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.toposu -c -a -b -s -l input=surface_units output=surface_units2 dem=MNT hydro=reachs gu=groundW ID=SELF_ID IDHYDRO=IDH POHYDRO=POH IDGU=IDG step=2 distreach=1</pre></div>
+
+<h4> Using input line direction vector, DEM value</h4>
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.toposu -c -a -b -s -l input=surface_units output=surface_units2  dem=MNT hydro=reachs inputman=lineIN ID=SELF_ID IDHYDRO=IDH POHYDRO=POH step=2 distreach=1
+</pre></div>
+
+
+
+
+
+
+<h2>SEE ALSO</h2>
+<a href="m.seg.html">m.seg</a>, <a href="m.toporeach.html">m.toporeach</a>, <a href="m.definput.html">m.definput</a>, 
+
+<h2>AUTHORS</h2>
+Michael Rabotin, UMR LISAH, Montpellier, France
+<p>rabotin@supagro.inra.fr
+
+</p><p><em> Last Changed: </em> 04 July 2011
+</p></dl>
+
+<p></p><hr>
+<P><a href="index.html">Main index</a> 
+<p>Copyright 2003-2008 <a href="http://www.umr-lisah.fr/openfluid/index.php?page=welc&amp;lang=fr">UMR LISAH OpenFluid</a></p>
+
+
+
+
+</body>
+</html>

@@ -1,0 +1,943 @@
+#!/bin/bash
+############################################################################
+#
+# MODULE:       m.toporeach
+# AUTHOR(S):    Michael Rabotin (rabotin@supagro.inra.fr)
+# PURPOSE:      Topology calculation for reach segments 
+# REQUIREMENTS: m.testtype, m.splicepl, v.flip, v.line.center, m.outletalti, m.processord,
+#               m.slope, m.pente3pl
+# COPYRIGHT:    (C) 2009 UMR LISAH - OpenFluid
+#
+#               This program is free software under the GNU General Public
+#               License (>=v2). Read the file COPYING that comes with GRASS
+#               for details.
+#
+#
+#############################################################################
+#%Module
+#%  description: Topology calculation for reach segments 
+#% keywords : vector, topology, linear units, MHYDAS
+#%END
+#%flag
+#% key: c
+#% description: use the option outlet to find the outlet segment (must use the column 'outlet'); otherwise DEM is used
+#%END
+#%option
+#% key: input
+#% type: string
+#% gisprompt: old,vector,vector
+#% description: Input line vector name
+#% key_desc : name
+#% required : yes
+#%END
+#%option
+#% key: output
+#% type: string
+#% gisprompt: new,vector,vector
+#% description: Output line vector name
+#% key_desc : name
+#% required : yes
+#%END
+#%option
+#% key: gu
+#% type: string
+#% gisprompt: old,vector,vector
+#% description: Input ground water vector name
+#% key_desc : name
+#% required : no
+#%END
+#%option
+#% key: id
+#% type: string
+#% description: id reach column name
+#% required : yes
+#%END
+#%option
+#% key: idgu
+#% type: string
+#% description: id Ground Water column name
+#% required : no
+#%END
+#%option
+#% key: colwidth
+#% type: string
+#% description: Width reach column name 
+#% required : no
+#%END
+#%option
+#% key: colheight
+#% type: string
+#% description: Height reach column name 
+#% required : no
+#%END
+#%option
+#% key: dem
+#% type: string
+#% gisprompt: old,cell,raster
+#% description: Input DEM
+#% key_desc : name
+#% required : yes
+#%END
+#%option
+#% key: outlet
+#% type: double
+#% description: <ID> value of the outlet segment
+#% required : no
+#%END
+#%option
+#% key: slop_val
+#% type: double
+#% description: Replacement value for null or negative calculated slope (must be > 0; default value is 0.0001)
+#% required : no
+#%END
+#%option
+#% key: ID_OUT
+#% type: string
+#% description: id OUTPUT column name
+#% answer : SELF_ID
+#% required : no
+#%END
+#%option
+#% key: UPST_OUT
+#% type: string
+#% description: UP Node OUTPUT column name
+#% answer : UPST_NOD
+#% required : no
+#%END
+#%option
+#% key: DNST_OUT
+#% type: string
+#% description: DOWN Node OUTPUT column name
+#% answer : DNST_NOD
+#% required : no
+#%END
+#%option
+#% key: LOW_OUT
+#% type: string
+#% description: Low RS id OUTPUT column name
+#% answer : LORCH_ID
+#% required : no
+#%END
+#%option
+#% key: LEN_OUT
+#% type: string
+#% description: Length OUTPUT column name
+#% answer : USR_LEN
+#% required : no
+#%END
+#%option
+#% key: WID_OUT
+#% type: string
+#% description: Width OUTPUT column name
+#% answer : USR_WID
+#% required : no
+#%END
+#%option
+#% key: HEIG_OUT
+#% type: string
+#% description: Height OUTPUT column name
+#% answer : USR_HEIG
+#% required : no
+#%END
+#%option
+#% key: SLOPE_OUT
+#% type: string
+#% description: Slope OUTPUT column name
+#% answer : USR_SLOP
+#% required : no
+#%END
+#%option
+#% key: PCSSORD_OUT
+#% type: string
+#% description: Process Order OUTPUT column name
+#% answer : PCSS_ORD
+#% required : no
+#%END
+#%option
+#% key: COMMENT_OUT
+#% type: string
+#% description: Commentary OUTPUT column name
+#% answer : COMMENT
+#% required : no
+#%END
+#%option
+#% key: GUID_OUT
+#% type: string
+#% description: ID GU OUTPUT column name
+#% answer : EXHGW_ID
+#% required : no
+#%END
+
+eval `g.gisenv`
+: ${GISDBASE?} ${LOCATION_NAME?} ${MAPSET?}
+
+
+if [ "$1" != "@ARGS_PARSED@" ] ; then
+  exec g.parser "$0" "$@"
+fi
+
+INPUT="$GIS_OPT_INPUT"
+OUTPUT="$GIS_OPT_OUTPUT"
+GU="$GIS_OPT_GU"
+WIDTH="$GIS_OPT_COLWIDTH"
+HEIGHT="$GIS_OPT_COLHEIGHT"
+MNT="$GIS_OPT_DEM"
+ID="$GIS_OPT_ID"
+IDGU="$GIS_OPT_IDGU"
+CAT_OUTLET="$GIS_OPT_OUTLET"
+ID_OUT="$GIS_OPT_ID_OUT"
+UPST_OUT="$GIS_OPT_UPST_OUT"
+DNST_OUT="$GIS_OPT_DNST_OUT"
+LOW_OUT="$GIS_OPT_LOW_OUT"
+LEN_OUT="$GIS_OPT_LEN_OUT"
+WID_OUT="$GIS_OPT_WID_OUT"
+HEIG_OUT="$GIS_OPT_HEIG_OUT"
+SLOPE_OUT="$GIS_OPT_SLOPE_OUT"
+PCSSORD_OUT="$GIS_OPT_PCSSORD_OUT"
+COMMENT_OUT="$GIS_OPT_COMMENT_OUT"
+GUID_OUT="$GIS_OPT_GUID_OUT"
+SLOP_VAL="$GIS_OPT_SLOP_VAL"
+
+
+#  GRASS testing
+if  [ -z "$GISBASE" ]
+then
+  echo ""
+  echo "You must start GRASS to launch this program"
+  echo ""
+  exit 2
+fi
+
+#GRASS version testing, must be >= 6.3
+
+Gversion1=`g.version |cut -d" " -f2 |cut -d"." -f1`
+Gversion2=`g.version |cut -d" " -f2 |cut -d"." -f2`
+
+if [ $Gversion1 -ge 6 ];then
+	if [ $Gversion1 = 6 ] && [ $Gversion2 -lt 3 ];then 
+		g.message -e message="You must have GRASS version 6.3.0 or higher"
+		exit 2
+	fi
+else
+	g.message -e message="You must have GRASS version 6.3.0 or higher"
+	exit 2
+
+fi
+
+# awk testing
+if [ ! -x "`which awk`" ];then
+  g.message -e message="awk required, please install awk our gawk first"
+  exit 2
+fi
+
+#perl testing
+if [ ! -x "`which perl`" ];then
+  g.message -e message="perl required, please install perl first"
+  exit 2
+fi
+
+#test driver (dbf only accepted)
+if [ "`db.connect -p|head -n 1 |cut -d":" -f2 `" != "dbf" ]
+then
+	g.message -e message="Sorry, but only dbf driver accepted "
+  exit 2
+fi 
+
+# ogr2ogr library testing
+if [ ! -x "`which ogr2ogr`" ];then
+  g.message -e message="ogr2ogr library required, please install first"
+  exit 2
+fi
+
+
+
+# setting environment, so that awk works properly in all languages
+unset LC_ALL
+LC_NUMERIC=C
+export LC_NUMERIC
+
+# all above OK - proceed: set up temporary files
+TMP="`g.tempfile pid=$$`"
+if [ $? -ne 0 ] || [ -z "$TMP" ] ; then
+    echo "ERROR: Unable to create temporary files." 1>&2
+    exit 2
+fi
+rm -f $TMP
+PROG=`basename $0 | sed 's/\./_/g'`
+NOW=$(date +"%F-%X")
+LOGFILE="$PROG-$NOW.log"
+
+#cleanup procedure
+cleanup()
+{
+  \rm -f $TMP
+   
+   for ((u=1;u<=70;u+=1))
+  do
+    rm -f $TMP.${PROG}.$u
+  done
+
+  g.mremove -f vect="$INPUT"_toporeachtmp* --q
+  if [ -e ~/$LOGFILE ] && [ ! -s ~/$LOGFILE ] ;then
+		rm -f ~/$LOGFILE
+  fi
+  
+}
+
+# what to do in case of user break:
+exitprocedure()
+{
+  echo -e "\nUser break!"
+  cleanup
+  exit 2
+}
+# shell check for user break (signal list: trap -l)
+trap "exitprocedure" 2 3 15
+
+
+
+# dependancies testing
+if [ ! -x "`which m.testtype`" ];then
+  g.message -e message="m.testtype subscript required, please install it first"
+  exit 2
+fi
+
+if [ ! -x "`which m.splicepl`" ];then
+  g.message -e message="m.splicepl subscript required, please install it first"
+  exit 2
+fi
+
+if [ ! -x "`which v.flip`" ];then
+  g.message -e message="v.flip subscript required, please install it first"
+  exit 2
+fi
+
+if [ ! -x "`which v.line.center`" ];then
+  g.message -e message="v.line.center subscript required, please install it first"
+  exit 2
+fi
+
+if [ ! -x "`which m.outletalti`" ];then
+  g.message -e message="m.outletalti subscript required, please install it first"
+  exit 2
+fi
+
+if [ ! -x "`which m.processord`" ];then
+  g.message -e message="m.processord subscript required, please install it first"
+  exit 2
+fi
+
+if [ ! -x "`which m.slope`" ];then
+  g.message -e message="m.slope subscript required, please install it first"
+  exit 2
+fi
+
+if [ ! -x "`which m.pente3pl`" ];then
+  g.message -e message="m.pente3pl subscript required, please install it first"
+  exit 2
+fi
+
+#test if output vector map already exists
+eval `g.findfile element=vector file="$OUTPUT" `
+if [ "$file" ] ; then
+  if [ -z "$GRASS_OVERWRITE" ] || [ "$GRASS_OVERWRITE" -eq 0 ]; then
+    g.message -w message="<$OUTPUT> already exists in this mapset or in another mapset of this location. Use the --o flag to overwrite." 1>&2
+    exit 2
+  else
+    g.message -w message="<$OUTPUT>  already exists and will be overwritten"
+  fi
+fi
+
+
+#test if OUTPUT vector name is allowed
+v.in.region output=$OUTPUT --q  |grep -v "SQL" 2>$TMP.${PROG}.70
+	
+if [ -s "$TMP.${PROG}.70" ];then
+	g.message -w message="Illegal vector map name <$OUTPUT>" 1>&2
+    exit 2
+else
+	g.remove vect=$OUTPUT --q  
+fi
+
+
+#test if input temporary vector map already exist
+g.mlist type=vect pattern="$INPUT"_toporeachtmp*  > $TMP.${PROG}.1
+if [ -s "$TMP.${PROG}.1" ];then
+  g.message -w message="<$INPUT>_toporeachtmp name for temporay vector files is already used in this mapset or in another mapset of this location"
+  cleanup
+  exit 2
+
+fi
+
+# test if input vector map exists
+g.findfile element=vector mapset=${MAPSET?} file=${INPUT} > /dev/null
+if [ $? -ne 0 ] ; then
+ g.message -e message="<$INPUT> vector doesn't exist !"
+ cleanup
+ exit 2
+fi
+
+m.testtype input=$INPUT > $TMP.${PROG}.2
+
+#if input vector map is not a line vector, exit program
+if [ "`cat $TMP.${PROG}.2`" != "line" ] ; then
+	g.message -e message="<$INPUT> doesn't exist or isn't a vector line !!"
+	cleanup
+	exit 2
+fi
+
+
+#if GU provided, securities begin
+if [ ! -z "$GU" ];then
+  #test if GU vector map exists
+  g.findfile element=vector mapset=${MAPSET?} file=${GU} > /dev/null
+  if [ $? -ne 0 ] ; then
+  g.message -e message="<$GU> vector doesn't exist !"
+  cleanup
+  exit 2
+  fi
+  
+  m.testtype input=$GU > $TMP.${PROG}.3
+  
+  #if input vector map is not a polygon vector, exit program
+  if [ "`cat $TMP.${PROG}.3`" != "polygone" ] ; then
+    g.message -e message="<$GU> doesn't exist or isn't a vector polygone !!"
+    cleanup
+    exit 2
+  fi
+
+  # test IDGU  value
+  v.info -c map=$GU --q |cut -d"|" -f2 |grep "^$IDGU$" > $TMP.${PROG}.4
+  if [ ! -s "$TMP.${PROG}.4" ];then
+    g.message -e message="The column <$IDGU> doesn't exist !!"
+    cleanup
+    exit 2
+  fi
+  if [ "$IDGU" = "cat" ];then
+		g.message -e message="<idgu> can't be <cat> !!"
+		cleanup
+		exit 2	
+  fi
+  
+fi
+
+# test if DEM raster map exists
+g.findfile element=cell mapset=${MAPSET?} file=${MNT} > /dev/null
+if [ $? -ne 0 ] ; then
+  g.message -e message="<$MNT> raster not found !!"
+  cleanup
+  exit 2
+fi
+
+
+#test WIDTH value
+if [ ! -z "$WIDTH" ];then
+  v.info -c map=$INPUT --q |cut -d"|" -f2 |grep "^$WIDTH$" > $TMP.${PROG}.5
+  if [ ! -s "$TMP.${PROG}.5" ];then
+    g.message -e message="The column <$WIDTH> doesn't exist !!"
+    cleanup
+    exit 2
+  fi
+fi
+
+
+
+# test HEIGHT value
+if [ ! -z "$HEIGHT" ];then
+  v.info -c map=$INPUT --q |cut -d"|" -f2 |grep "^$HEIGHT$" > $TMP.${PROG}.6
+  if [ ! -s "$TMP.${PROG}.6" ];then
+    g.message -e message="The column <$HEIGHT> doesn't exist !!"
+    cleanup
+    exit 2
+  fi
+fi
+
+
+# test ID value
+v.info -c map=$INPUT --q |cut -d"|" -f2 |grep "^$ID$" > $TMP.${PROG}.7
+if [ ! -s "$TMP.${PROG}.7" ];then
+  g.message -e message="The column <$ID> doesn't exist !!"
+  cleanup
+  exit 2
+fi
+
+if [ "$ID" = "cat" ];then
+		g.message -e message="<id> can't be <cat> !!"
+		cleanup
+		exit 2	
+fi
+
+
+# test CAT_OUTLET value
+if [ $GIS_FLAG_C -eq 1 ];then
+	if [ "`echo $CAT_OUTLET |grep "[[:digit:]]" | wc -c`" = "0" ] ;then
+	  g.message -e message="<outlet> value isn't numeric !!"
+	  cleanup
+	  exit 2
+	fi
+	if [ "`echo $CAT_OUTLET |grep "[[:alpha:]]" | wc -c`" != "0" ] ;then
+		g.message -e message="<outlet> value isn't numeric !!"
+		cleanup
+		exit 2
+	fi
+
+	
+	v.db.select -c map=$INPUT column=cat where="$ID = $CAT_OUTLET" nv="" > $TMP.${PROG}.8
+	if [ ! -s "$TMP.${PROG}.8" ];then
+	  g.message -e message="The value <outlet> in column <$ID> doesn't exist !!"
+	  cleanup
+	  exit 2
+	fi
+fi
+
+# test SLOP_VAL value
+if [ ! -z "$SLOP_VAL" ];then
+	if [ "`echo $SLOP_VAL |grep "[[:digit:]]" | wc -c`" = "0" ] ;then
+	  g.message -e message="<slop_val> value isn't numeric !!"
+	  cleanup
+	  exit 2
+	fi
+	if [ "`echo $SLOP_VAL |grep "[[:alpha:]]" | wc -c`" != "0" ] ;then
+		g.message -e message="<slop_val> value isn't numeric !!"
+		cleanup
+		exit 2
+	fi
+	if [ "$SLOP_VAL" = "0" ];then
+		g.message -e message="<slop_val> must be superior to 0 !!"
+		cleanup
+		exit 2
+	fi
+else
+	SLOP_VAL=0.0001
+fi
+
+
+
+
+######### securities ending
+
+g.copy vect=$INPUT,"$INPUT"_toporeachtmp1 --q 2>>~/$LOGFILE
+
+# no flag C, we find the outlet by DEM
+# searching the point of the network with the lowest altitude
+# call m.outletalti script
+
+if [ $GIS_FLAG_C -ne 1 ];then
+
+  m.outletalti input="$INPUT"_toporeachtmp1 dem=$MNT file=$TMP.${PROG}.9 2>>~/$LOGFILE
+  if [ ! -e "$TMP.${PROG}.9" ];then
+    g.message -e message="Problem finding outlet segment !!"
+    cleanup 
+    exit 2
+  else
+   CAT_OUTLET=`cat $TMP.${PROG}.9`
+  fi
+# flag C : storing the value of cat corresponding to value of column $ID
+else 
+  v.db.select -c map=$INPUT column=cat where="$ID=$CAT_OUTLET" > $TMP.${PROG}.9 2>>~/$LOGFILE
+  CAT_OUTLET=`cat $TMP.${PROG}.9`
+fi
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+##############  checking the segment orientations 
+
+#creation of network topology
+v.net -c input="$INPUT"_toporeachtmp1 output="$INPUT"_toporeachtmp2 operation=nodes --q 2>>~/$LOGFILE
+
+#exportation of the netowrk topology
+#$TMP.${PROG}.10: cat_segment cat_start_point cat_end_point
+v.net input="$INPUT"_toporeachtmp2 operation=report --q > $TMP.${PROG}.10 2>>~/$LOGFILE
+
+#$TMP.${PROG}.11: cat_point line_cat,line_cat...
+v.net input="$INPUT"_toporeachtmp2 operation=nreport --q > $TMP.${PROG}.11 2>>~/$LOGFILE
+
+#searching all the nodes which are dangles (inlets)
+#they are nodes which ar in contact with only one segment
+grep -v "," $TMP.${PROG}.11 |cut -d" " -f1 > $TMP.${PROG}.12 2>>~/$LOGFILE
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+
+#transforming the outlet segment of INPUT into point and searching what is the cat in INPUT_toporeachtmp2 
+#because  topology network creation can modify geometry so the number of cat
+v.extract input="$INPUT"_toporeachtmp1 output="$INPUT"_toporeachtmp3 list=$CAT_OUTLET --q 2>>~/$LOGFILE
+v.line.center input="$INPUT"_toporeachtmp3 layer=1 output="$INPUT"_toporeachtmp4  2>/dev/null
+v.db.addtable map="$INPUT"_toporeachtmp4 columns="catM INTEGER" --q 2>>~/$LOGFILE
+v.distance from="$INPUT"_toporeachtmp4 to="$INPUT"_toporeachtmp2 from_type=point to_type=line dmax=0.03 upload=cat column=catM --q 2>>~/$LOGFILE
+v.db.select -c map="$INPUT"_toporeachtmp4 column=catM --q >$TMP.${PROG}.13 2>>~/$LOGFILE
+CAT_OUTLET2=`cat $TMP.${PROG}.13`
+g.remove vect="$INPUT"_toporeachtmp3,"$INPUT"_toporeachtmp4 --q 2>>~/$LOGFILE
+
+grep "^$CAT_OUTLET2 " $TMP.${PROG}.10 |cut -d" " -f2,3 > $TMP.${PROG}.14 2>>~/$LOGFILE
+for l in `cat $TMP.${PROG}.14`;do
+  grep "^$l " $TMP.${PROG}.11 >> $TMP.${PROG}.15 2>>~/$LOGFILE
+done
+
+#$TMP.${PROG}.16 contains the point outlet cat  
+grep -v "," $TMP.${PROG}.15 |cut -d" " -f1> $TMP.${PROG}.16 2>>~/$LOGFILE
+cat_exut=`cat $TMP.${PROG}.16`
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+
+#we remove from  $TMP.${PROG}.12 the cat of the outlet point 
+diff $TMP.${PROG}.12 $TMP.${PROG}.16 > $TMP.${PROG}.17 2>>~/$LOGFILE
+#cleaning  $TMP.${PROG}.17 with removing the lines with  ','
+grep -v "d" $TMP.${PROG}.17  > $TMP.${PROG}.18 2>>~/$LOGFILE
+#cleaning  $TMP.${PROG}.18 with removing  '>' created during the difference
+
+#$TMP.${PROG}.19 contains the cat of the inlet points 
+cut -d" " -f2 $TMP.${PROG}.18 > $TMP.${PROG}.19 2>>~/$LOGFILE
+ 
+#storing the orientation of the outlet segment 
+cut -d" " -f1 $TMP.${PROG}.14 > $TMP.${PROG}.20 2>>~/$LOGFILE
+exut_start=`cat $TMP.${PROG}.20`
+
+if [ "$exut_start" = "$cat_exut" ];then
+  #the cat of the outlet node is in column 2  (cat_start_point) of $TMP.${PROG}.10
+  #we must flip this segment
+  echo "$CAT_OUTLET2" > $TMP.${PROG}.21 2>>~/$LOGFILE
+  col_exutnode=3
+else
+  col_exutnode=2
+fi
+
+#checking that all inlet points go to the outlet
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+##################### begin for command #####################
+for m in `cat $TMP.${PROG}.19`;do
+
+  echo "1 $cat_exut $m"|v.net.path input="$INPUT"_toporeachtmp2 output="$INPUT"_toporeachtmp5 --q 2>>~/$LOGFILE
+  v.info --q map="$INPUT"_toporeachtmp5 | grep "lines:" | cut -c30-40 > $TMP.${PROG}.22 2>>~/$LOGFILE
+  typeset -i line2
+  line2=`cat $TMP.${PROG}.22`
+  rm -f $TMP.${PROG}.22
+
+  if [ $line2 -eq 0 ];then
+    echo " ERROR: The path between the inlet $m and the outlet isn't valid !"
+    echo " Maybe your network isn't connected !"
+    cleanup 
+    exit 2
+  fi
+  
+  #and that all the segments are well oriented
+  #we select the segments of i_toporeachtmp2 concerned by i_toporeachtmp5
+  v.select ainput="$INPUT"_toporeachtmp2 atype=line binput="$INPUT"_toporeachtmp5 btype=line output="$INPUT"_toporeachtmp6 --q 2>/dev/null
+  v.net -c input="$INPUT"_toporeachtmp6 output="$INPUT"_toporeachtmp7 --q 2>/dev/null
+  v.net --q input="$INPUT"_toporeachtmp7 operation=nreport |cut -d" " -f2 > $TMP.${PROG}.23 2>/dev/null
+  #$TMP.${PROG}.24 contains the cat of the dangle segments
+  grep -v "," $TMP.${PROG}.23 |sort -k1n > $TMP.${PROG}.24 2>>~/$LOGFILE
+
+  #extracting the cat of the segments of  INPUT_toporeachtmp6
+  v.db.select -c map="$INPUT"_toporeachtmp6 column=cat |sort -k1n  > $TMP.${PROG}.25 2>>~/$LOGFILE
+  diff $TMP.${PROG}.25 $TMP.${PROG}.24 > $TMP.${PROG}.26 2>>~/$LOGFILE
+  #cleaning  $TMP.${PROG}.26 with removing lines with  ','
+  grep -v "d" $TMP.${PROG}.26  > $TMP.${PROG}.27 2>>~/$LOGFILE
+  #cleaning  $TMP.${PROG}.27 with removing  '>' created during the difference 
+  cut -d" " -f2 $TMP.${PROG}.27 > $TMP.${PROG}.28 2>>~/$LOGFILE
+  #adding the outlet segment cat and the inlet segment cat
+  echo "$CAT_OUTLET2" >>$TMP.${PROG}.28 2>>~/$LOGFILE
+
+  grep "^$m " $TMP.${PROG}.11 |cut -d" " -f2 > $TMP.${PROG}.29 2>>~/$LOGFILE
+  cat_seg_source=`cat $TMP.${PROG}.29`
+  echo "$cat_seg_source" >>$TMP.${PROG}.28 2>>~/$LOGFILE
+  sort -k1n $TMP.${PROG}.28 > $TMP.${PROG}.30 2>>~/$LOGFILE
+  #storing in  $TMP.${PROG}.10 only the cat of the selected segments  (selection of $TMP.${PROG}.10)
+  for j in `cat $TMP.${PROG}.30`;do
+    grep "^$j " $TMP.${PROG}.10 >> $TMP.${PROG}.31 2>>~/$LOGFILE
+  done
+  
+	if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+	fi	
+	
+  #$TMP.${PROG}.31 contains selection of  $TMP.${PROG}.10
+  # in $TMP.${PROG}.31 searching the network structure (from outlet to inlet)
+  #searching the outlet segment node
+  grep "^$CAT_OUTLET2 " $TMP.${PROG}.31|cut -d" " -f$col_exutnode > $TMP.${PROG}.32 2>>~/$LOGFILE
+  grep -n "^$CAT_OUTLET2 " $TMP.${PROG}.31|cut -d":" -f1 > $TMP.${PROG}.33 2>>~/$LOGFILE
+  
+  cat_exutnode=`cat $TMP.${PROG}.32`
+
+  #checking that the outlet segment node is not the inlet
+
+  if [ "$cat_exutnode" != "$m" ];then
+    z=$cat_exutnode
+
+    cut -d" " -f2 $TMP.${PROG}.31 >$TMP.${PROG}.34 2>>~/$LOGFILE
+    cut -d" " -f3 $TMP.${PROG}.31 >$TMP.${PROG}.35 2>>~/$LOGFILE
+    while [ "$z" != "$m" ]
+    do
+
+      awk -F" " < $TMP.${PROG}.34 '$1=='$z'{print FNR}'> $TMP.${PROG}.36 2>>~/$LOGFILE
+      awk -F" " < $TMP.${PROG}.35 '$1=='$z'{print FNR}'>> $TMP.${PROG}.36 2>>~/$LOGFILE
+
+      diff $TMP.${PROG}.36 $TMP.${PROG}.33 > $TMP.${PROG}.37 2>>~/$LOGFILE
+      
+      #cleaning  $TMP.${PROG}.37 with removing lines with  ','
+      grep -v "d" $TMP.${PROG}.37  > $TMP.${PROG}.38 2>>~/$LOGFILE
+      grep -v "c" $TMP.${PROG}.38  > $TMP.${PROG}.39 2>>~/$LOGFILE 
+      grep -v "a" $TMP.${PROG}.39  > $TMP.${PROG}.40 2>>~/$LOGFILE
+      grep -v "\-\-\-" $TMP.${PROG}.40 > $TMP.${PROG}.41 2>>~/$LOGFILE
+      #cleaning  $TMP.${PROG}.41 with removing  '>' created during the difference
+      cut -d" " -f2 $TMP.${PROG}.41 > $TMP.${PROG}.42 2>>~/$LOGFILE
+
+
+      linez=`cat $TMP.${PROG}.42`
+      echo "$linez" > $TMP.${PROG}.33 2>>~/$LOGFILE
+
+      head -n $linez $TMP.${PROG}.31|tail -n1 > $TMP.${PROG}.43 2>>~/$LOGFILE
+			
+      cut -d" " -f2 $TMP.${PROG}.43 > $TMP.${PROG}.44 2>>~/$LOGFILE
+      linezstart=`cat $TMP.${PROG}.44`
+      #if reverse segment, we store its cat for a future flip
+      if [ "$linezstart" = "$z" ];then
+        cut -d" " -f1 $TMP.${PROG}.43 > $TMP.${PROG}.45 2>>~/$LOGFILE
+        c=`cat $TMP.${PROG}.45`
+        echo "$c" >> $TMP.${PROG}.21 2>>~/$LOGFILE
+        cut -d" " -f3 $TMP.${PROG}.43 > $TMP.${PROG}.44 2>>~/$LOGFILE
+        linezstart=`cat $TMP.${PROG}.44`
+      fi
+
+      z=$linezstart
+      rm -f $TMP.${PROG}.36
+	  
+		if [ ! -z "`cat ~/$LOGFILE`" ];then
+			g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+			cleanup
+			exit 2
+		fi	  
+    done
+
+  fi
+
+  g.remove vect="$INPUT"_toporeachtmp5,"$INPUT"_toporeachtmp6,"$INPUT"_toporeachtmp7 --q  2>>~/$LOGFILE
+  
+  for ((x=23;x<=45;x+=1))
+  do
+    rm -f $TMP.${PROG}.$x
+  done
+
+
+done
+
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+
+### flipping all the segments selected
+if [ -e "$TMP.${PROG}.21" ] ; then
+	sort -k1g $TMP.${PROG}.21 > $TMP.${PROG}.67 2>>~/$LOGFILE
+	uniq -u $TMP.${PROG}.67 > $TMP.${PROG}.68 2>>~/$LOGFILE
+	uniq -d $TMP.${PROG}.67 >> $TMP.${PROG}.68 2>>~/$LOGFILE
+	echo "`cat $TMP.${PROG}.68`" | awk '{ OFS = "," ; ORS = ","; $1 = $1; print $0 }' > $TMP.${PROG}.46 2>>~/$LOGFILE
+  v.flip input="$INPUT"_toporeachtmp2 layer=1 cat=`cat $TMP.${PROG}.46` output="$INPUT"_toporeachtmp8  2>/dev/null
+else
+  g.copy vect="$INPUT"_toporeachtmp2,"$INPUT"_toporeachtmp8 --q 2>>~/$LOGFILE
+fi
+g.remove vect="$INPUT"_toporeachtmp2,"$INPUT"_toporeachtmp1 --q 2>>~/$LOGFILE
+v.net -c input="$INPUT"_toporeachtmp8 output="$INPUT"_toporeachtmp1 operation=nodes --q 2>>~/$LOGFILE
+g.remove vect="$INPUT"_toporeachtmp8 --q 2>>~/$LOGFILE
+
+
+#####ending searching segment orientation
+
+g.copy vect="$INPUT"_toporeachtmp1,"$INPUT"_toporeachtmp2 --q  2>>~/$LOGFILE
+
+
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+#but testing the presence of column LENGTH  | length
+v.info -c map="$INPUT"_toporeachtmp2 --q > $TMP.${PROG}.47 2>>~/$LOGFILE
+grep "|[Ll][Ee][Nn][Gg][Tt][Hh]$" $TMP.${PROG}.47 |cut -d"|" -f2 > $TMP.${PROG}.48 2>>~/$LOGFILE
+
+if [ -s "$TMP.${PROG}.48" ];then
+  v.db.dropcol map="$INPUT"_toporeachtmp2 column=`cat $TMP.${PROG}.48` --q 2>>~/$LOGFILE
+fi
+  v.db.addcol map="$INPUT"_toporeachtmp2 columns="UpNode INTEGER,DownNode INTEGER,LowRS INTEGER,LENGTH double precision,ExchangeGU INTEGER" --q 2>>~/$LOGFILE
+
+
+
+
+#column  LENGTH calculation
+v.to.db map="$INPUT"_toporeachtmp2 type=line option=length units=me column=LENGTH --q 2>>~/$LOGFILE
+
+#v.net command for creating the network
+v.net -c input="$INPUT"_toporeachtmp2 output="$INPUT"_toporeachtmp9 operation=nodes --q 2>>~/$LOGFILE
+
+#$TMP.${PROG}.49 contains: line_category start_point_category end_point_category
+v.net input="$INPUT"_toporeachtmp9 operation=report |sort -k1g  > $TMP.${PROG}.49 2>>~/$LOGFILE
+
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+#updating the columns  UpNode and DownNode
+wc -l $TMP.${PROG}.49 |cut -d" " -f1 > $TMP.${PROG}.50 2>>~/$LOGFILE
+typeset -i nbl
+nbl=`cat $TMP.${PROG}.50`
+
+for ((z = 1; z <= $nbl; z += 1))
+do
+	
+  m.splicepl $z $TMP.${PROG}.49 > $TMP.${PROG}.51 2>>~/$LOGFILE
+  cut -d" " -f1 $TMP.${PROG}.51 > $TMP.${PROG}.52 2>>~/$LOGFILE
+  cut -d" " -f2 $TMP.${PROG}.51 > $TMP.${PROG}.53 2>>~/$LOGFILE
+  cut -d" " -f3 $TMP.${PROG}.51 > $TMP.${PROG}.54 2>>~/$LOGFILE
+  v.db.update map="$INPUT"_toporeachtmp2 column=UpNode value=`cat $TMP.${PROG}.53` where="cat=`cat $TMP.${PROG}.52`" --q 2>>~/$LOGFILE
+  v.db.update map="$INPUT"_toporeachtmp2 column=DownNode value=`cat $TMP.${PROG}.54` where="cat=`cat $TMP.${PROG}.52`" --q 2>>~/$LOGFILE
+done 
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+#identification of the down  RS 
+cut -d" " -f1 $TMP.${PROG}.49 > $TMP.${PROG}.55 2>>~/$LOGFILE
+
+for i in `cat $TMP.${PROG}.55`;do
+  vari=$i	
+  awk -F" " <$TMP.${PROG}.49 '$1=='$vari'' |cut -d" " -f3 >$TMP.${PROG}.56 2>>~/$LOGFILE
+  var3=`cat $TMP.${PROG}.56`
+  awk -F" " <$TMP.${PROG}.49 '$2=='$var3'' |cut -d" " -f1 >$TMP.${PROG}.57 2>>~/$LOGFILE
+
+  if [ -s "$TMP.${PROG}.57" ];then
+          
+    # storing $ID value instead of cat value
+    v.db.select -c map=$INPUT column=$ID where="cat=`cat $TMP.${PROG}.57`" nv=0 --q > $TMP.${PROG}.58 2>>~/$LOGFILE
+    RSaval=`cat $TMP.${PROG}.58`
+    v.db.update map="$INPUT"_toporeachtmp2 column=LowRS value=$RSaval where="cat=$i" --q 2>>~/$LOGFILE
+    rm -f $TMP.${PROG}.58
+  else
+    #for the outlet segment with no down RS
+    v.db.update map="$INPUT"_toporeachtmp2 column=LowRS value=0 where="cat=$i" --q 2>>~/$LOGFILE
+  fi
+
+  rm -f $TMP.${PROG}.56
+  rm -f $TMP.${PROG}.57
+
+done
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+# Process Order calculation
+v.db.addcol map="$INPUT"_toporeachtmp2 columns="ProcessOrd INTEGER" --q 2>>~/$LOGFILE
+m.processord input="$INPUT"_toporeachtmp2 output="$INPUT"_toporeachtmp10 column=ProcessOrd 2>>~/$LOGFILE
+INPUTPROCESS="$INPUT"_toporeachtmp10
+g.findfile element=vector mapset=${MAPSET?} file=${INPUTPROCESS} > /dev/null
+if [ $? -ne 0 ] ; then
+ echo "ERROR: Problems for calculating Process Order !"
+ cleanup 
+ exit 2
+fi
+
+#slope calculation
+
+m.slope input="$INPUT"_toporeachtmp10 output="$INPUT"_toporeachtmp11 mnt=$MNT column=Slope  slop_val=$SLOP_VAL 2>>~/$LOGFILE
+INPUTSLOPE="$INPUT"_toporeachtmp11
+g.findfile element=vector mapset=${MAPSET?} file=${INPUTSLOPE} > /dev/null
+if [ $? -ne 0 ] ; then
+ echo "ERROR: Problems for calculating Slope !"
+ cleanup
+ exit 2
+fi
+
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+
+#if GU exists
+if [ ! -z "$GU" ];then
+  #GU in contact calculation
+  v.line.center input="$INPUT"_toporeachtmp11 layer=1 output="$INPUT"_toporeachtmp12  2>/dev/null
+  v.db.addtable map="$INPUT"_toporeachtmp12 columns="cathydro INTEGER,cat_aq INTEGER" --q 2>>~/$LOGFILE
+  v.distance from="$INPUT"_toporeachtmp12 to=$INPUT from_type=point to_type=line upload=to_attr dmax=0.2 column=cathydro to_column=$ID --q 2>>~/$LOGFILE
+  v.distance from="$INPUT"_toporeachtmp12 to=$GU from_type=point to_type=area dmax=0 upload=to_attr column=cat_aq to_column=$IDGU --q 2>>~/$LOGFILE
+  v.db.select -c map="$INPUT"_toporeachtmp12 column=cathydro,cat_aq nv=0 fs="|" --q > $TMP.${PROG}.59 2>>~/$LOGFILE
+  for j in `cat $TMP.${PROG}.59`;do
+    echo "$j" > $TMP.${PROG}.60 2>>~/$LOGFILE
+    cut -d"|" -f1 $TMP.${PROG}.60 > $TMP.${PROG}.61 2>>~/$LOGFILE
+    cathydro=`cat $TMP.${PROG}.61` 
+    cut -d"|" -f2 $TMP.${PROG}.60 > $TMP.${PROG}.62 2>>~/$LOGFILE
+    cataq=`cat $TMP.${PROG}.62`
+    v.db.update map="$INPUT"_toporeachtmp11 column=ExchangeGU value=$cataq where="$ID=$cathydro" --q 2>>~/$LOGFILE
+  done
+  rm -f $TMP.${PROG}.59 $TMP.${PROG}.60 $TMP.${PROG}.61 $TMP.${PROG}.62
+  g.remove vect="$INPUT"_toporeachtmp12 --q 2>>~/$LOGFILE
+
+else
+  #else we put ExchangeGU = 0
+  v.db.update map="$INPUT"_toporeachtmp11 column=ExchangeGU value=0  --q 2>>~/$LOGFILE
+fi
+
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+
+
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+
+# renaming the columns for  OpenFluid Builder
+v.db.renamecol --q map="$INPUT"_toporeachtmp11 layer=1 column=$ID,$ID_OUT 2>/dev/null
+v.db.renamecol  --q map="$INPUT"_toporeachtmp11 layer=1 column=UpNode,$UPST_OUT 2>/dev/null
+v.db.renamecol  --q map="$INPUT"_toporeachtmp11 layer=1 column=DownNode,$DNST_OUT 2>/dev/null
+v.db.renamecol  --q map="$INPUT"_toporeachtmp11 layer=1 column=LowRS,$LOW_OUT 2>/dev/null
+v.db.renamecol  --q map="$INPUT"_toporeachtmp11 layer=1 column=LENGTH,$LEN_OUT 2>/dev/null
+if [ ! -z "$WIDTH" ];then
+	v.db.renamecol  --q map="$INPUT"_toporeachtmp11 layer=1 column=$WIDTH,$WID_OUT 2>/dev/null
+else
+	v.db.addcol map="$INPUT"_toporeachtmp11 layer=1 columns="$WID_OUT DOUBLE PRECISION" 2>/dev/null
+fi
+if [ ! -z "$HEIGHT" ];then
+	v.db.renamecol  --q map="$INPUT"_toporeachtmp11 layer=1 column=$HEIGHT,$HEIG_OUT 2>/dev/null
+else
+	v.db.addcol map="$INPUT"_toporeachtmp11 layer=1 columns="$HEIG_OUT DOUBLE PRECISION" 2>/dev/null
+fi
+v.db.renamecol  --q map="$INPUT"_toporeachtmp11 layer=1 column=Slope,$SLOPE_OUT 2>/dev/null
+v.db.renamecol  --q map="$INPUT"_toporeachtmp11 layer=1 column=ProcessOrd,$PCSSORD_OUT 2>/dev/null
+v.db.addcol map="$INPUT"_toporeachtmp11 layer=1 columns="$COMMENT_OUT varchar(50)" 2>/dev/null
+v.db.renamecol  --q map="$INPUT"_toporeachtmp11 layer=1 column=ExchangeGU,$GUID_OUT 2>/dev/null	
+
+
+  g.rename vect="$INPUT"_toporeachtmp11,$OUTPUT --q 2>/dev/null
+
+
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+
+
+#cleanup procedure
+cleanup
+exit 0

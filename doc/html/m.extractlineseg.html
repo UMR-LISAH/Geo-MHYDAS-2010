@@ -1,0 +1,78 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>GRASS GIS: m.extractlineseg</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<link rel="stylesheet" href="grassdocs.css" type="text/css">
+</head>
+<body bgcolor="white">
+
+<img src="grass_logo.png" alt="GRASS logo"><hr align=center size=6 noshade>
+
+<h2>NAME</h2>
+<em><b>m.extractlineseg</b></em>  - linear units extraction after segmentation
+<h2>KEYWORDS</h2>
+vector, segmentation, linear units, extraction
+<h2>SYNOPSIS</h2>
+<b>m.extractlineseg</b><br>
+<b>m.extractlineseg help</b><br>
+<b>m.extractlineseg</b> <b>input</b>=<em>name</em> <b>polygon</b>=<em>name</em> <b>output</b>=<em>name</em>  [<b>ID</b>=<em>string</em>]   [--<b>overwrite</b>]  [--<b>verbose</b>]  [--<b>quiet</b>] 
+
+<h3>Flags:</h3>
+<DL>
+<DT><b>--overwrite</b></DT>
+<DD>Allow output files to overwrite existing files</DD>
+<DT><b>--verbose</b></DT>
+<DD>Verbose module output</DD>
+<DT><b>--quiet</b></DT>
+<DD>Quiet module output</DD>
+</DL>
+
+<h3>Parameters:</h3>
+<DL>
+<DT><b>input</b>=<em>name</em></DT>
+<DD>Input line vector name</DD>
+
+<DT><b>polygon</b>=<em>name</em></DT>
+<DD>Input segmented vector name</DD>
+
+<DT><b>output</b>=<em>name</em></DT>
+<DD>Output segmented line vector name</DD>
+
+<DT><b>ID</b>=<em>string</em></DT>
+<DD>Name of column for unique ID for the output layer (numerotation from 1); default is 'SELF_ID'</DD>
+
+</DL>
+
+<h2>DESCRIPTION</h2>
+<em>m.extractlineseg</em> script allows the user to extract linear units from segmented polygon input. The input polygon layer must be created by <a href="m.seg.html">m.seg</a> script. Input linear layer must be provided too. 
+
+<h2>NOTES</h2>
+<em>m.extractlineseg</em> script creates a segmented linear layer from intersection between boundary nodes of the input segmented polygon layer and input linear layer. Even, if this script is able to work with complex geometry features, user should check the validity of the output linear layer produced ! Eventually, launch <a href="m.network.html">m.network</a> script to verify vector geometry.
+
+
+<h2>EXAMPLES</h2>
+<h3>Creation of the seg_reach layer (with <em>ident</em> column name) from seg1 polygon layer and reachs linear layer</h3>
+
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.extraclineseg input=reachs polygon=seg1 output=seg_reach ID=ident
+</pre></div>
+
+<h2>SEE ALSO</h2>
+<a href="m.seg.html">m.seg</a>, <a href="m.colseg.html">m.colseg</a>, <a href="m.toporeach.html">m.toporeach</a>  
+
+
+<h2>AUTHORS</h2>
+Michael Rabotin, UMR LISAH, Montpellier, France
+<p>rabotin@supagro.inra.fr
+
+</p><p><em> Last Changed: </em> 21 July 2010
+</p></dl>
+
+<p></p><hr>
+<P><a href="index.html">Main index</a> 
+<p>Copyright <a href="http://www.umr-lisah.fr/openfluid/index.php?page=welc&amp;lang=fr">UMR LISAH OpenFluid</a></p>
+
+
+
+</body>
+</html>

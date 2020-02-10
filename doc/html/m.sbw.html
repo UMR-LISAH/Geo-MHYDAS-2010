@@ -1,0 +1,193 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html><head>
+
+
+
+
+<title>GRASS GIS: m.sbw</title>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<link rel="stylesheet" href="grassdocs.css" type="text/css">
+</head><body bgcolor="white">
+
+<img src="grass_logo.png" alt="GRASS logo"><hr size="6" align="center" noshade="noshade">
+
+<h2>NAME</h2>
+<em><b>m.sbw</b></em>  - subwatershed calculation program with hydrological network influence
+<h2>KEYWORDS</h2>
+subwatershed, network influence, stream burning method, modifying flowdir method
+<h2>SYNOPSIS</h2>
+<b>m.sbw</b><br>
+<b>m.sbw help</b><br>
+<b>m.sbw</b> [-<b>bfavcis</b>] <b>dem</b>=<em>name</em> <b>watershed</b>=<em>name</em> <b>stream</b>=<em>name</em> <b>sbv</b>=<em>name</em>  [<b>point</b>=<em>name</em>]   [<b>file</b>=<em>string</em>]   [<b>burn</b>=<em>float</em>]  <b>area</b>=<em>float</em>  [<b>res</b>=<em>float</em>]  <b>col</b>=<em>string</em> <b>percent</b>=<em>float</em>  [<b>snap</b>=<em>float</em>]   [--<b>overwrite</b>]  [--<b>verbose</b>]  [--<b>quiet</b>] 
+
+<h3>Flags:</h3>
+<dl>
+<dt><b>-b</b></dt>
+<dd>use stream burning method ; Value of digging in option 'burn'; default is no</dd>
+
+<dt><b>-f</b></dt>
+<dd>use modifying flowdir method ; default is no</dd>
+
+<dt><b>-a</b></dt>
+<dd>use of ascii coordinate point file for basin outlets; file name in
+option 'file' (see file option for the file format); default is no</dd>
+
+<dt><b>-v</b></dt>
+<dd>use of point vector for basin outlets; vector name in option 'point'; default is no</dd>
+
+<dt><b>-c</b></dt>
+<dd>smoothing corners of subwatershed features; default is no</dd>
+
+<dt><b>-i</b></dt>
+<dd>use stream inlets to create basin; default is no</dd>
+
+<dt><b>-s</b></dt>
+<dd>use stream confluence nodes to create basin outlets; default is no</dd>
+
+
+
+<dt><b>--overwrite</b></dt>
+<dd>Allow output files to overwrite existing files</dd>
+<dt><b>--verbose</b></dt>
+<dd>Verbose module output</dd>
+<dt><b>--quiet</b></dt>
+<dd>Quiet module output</dd>
+</dl>
+
+<h3>Parameters:</h3>
+<dl>
+<dt><b>dem</b>=<em>name</em></dt>
+<dd>Input DEM raster</dd>
+
+<dt><b>watershed</b>=<em>name</em></dt>
+<dd>Input watershed raster</dd>
+
+<dt><b>stream</b>=<em>name</em></dt>
+<dd>Input network vector</dd>
+
+<dt><b>sbv</b>=<em>name</em></dt>
+<dd>Output subwatersheds name</dd>
+
+<dt><b>point</b>=<em>name</em></dt>
+<dd>Input outlet points vector</dd>
+
+<dt><b>file</b>=<em>string</em></dt>
+<dd>Name of ascii coordinate point file for basin outlets (without
+intitulate column, field separator is 'space', col1 x and col2 y)</dd>
+
+<dt><b>burn</b>=<em>float</em></dt>
+<dd>Value of digging for the burning stream method</dd>
+
+<dt><b>area</b>=<em>float</em></dt>
+<dd>min area (in map units) value for the subwatershed</dd>
+
+<dt><b>res</b>=<em>float</em></dt>
+<dd>raster resolution</dd>
+
+<dt><b>col</b>=<em>string</em></dt>
+<dd>column name for subwatershed identification</dd>
+
+<dt><b>percent</b>=<em>float</em></dt>
+<dd>percentage of zero value accepted for subwatershed creation (area difference with watershed)</dd>
+
+<dt><b>snap</b>=<em>float</em></dt>
+<dd>distance (in map units) to snap outlet point to stream (default is 1)</dd>
+
+</dl>
+
+<h2>DESCRIPTION</h2>
+<em> m.sbw </em> allows the user to create subwaterheds with
+hydrological network influence. This is useful for watersheds with man
+made hydrological network which does not follow the longest slope.
+The subwatershed creation is forced to take care of these singularities.
+<h2>NOTES</h2>
+ <em> m.sbw </em> is based on <a href="http://grass.osgeo.org/grass64/manuals/html64_user/r.watershed.html">r.watershed</a>
+command plus several options allowing to take care the influence of
+existant hydrological networks on subwatershed creation: using the stream
+burning method on DEM (<em> See   Mizgalewicz, P.J. &amp; al, 1996; Saunders, W.K., &amp; al 1996 </em>), or flow direction modified method (<em> See Lagacherie, P. &amp; al, 1996 </em>).
+<p>The stream burning method digs the DEM cells which are in contact of the network (<em> Flag -b </em> is used), then the flow direction raster is computed and subwatersheds created.
+</p><p>The flow direction modified method (use <em> Flag -f </em>) works
+directly on the flow direction raster and reorients raster cells which are
+in contact of the network. For each of these cells, orientation is
+modified to flag to the network. It's an iterative process which can be slow.
+</p><p> Because of working in cultivated landscapes, the<em> percent</em> value needs to be used for forcing subwatershed creation. <b>In some case of very modified landscapes, subwatersheds creation can fail.</b>
+</p><p> Subwatershed outlets can be submitted from a vector map (use <em> Flag -v</em> and <em>point</em> option), or with an ascii file (use <em> Flag -a</em> and <em>file</em> option).<em> snap</em> option allows the outlet coordinates being snapped on the hydrological network. Using <em>Flag -i </em> allows to use stream inlets for additional outlets. Using <em> Flag -s</em> allows to use confluence points to create additional outlets. Multiple use of different flags can be made to the outlet points creation.
+
+</p><dl>
+<dt><em>area</em>, <em>col</em> and <em>percent</em> options are compulsories:</dt>
+
+<p></p><dd>- <em>area</em> is the minimum surface value of created subwatersheds (in map units). </dd> <p></p>
+
+<p></p><dd>- <em>col</em> will be the column name (type INTEGER) in the <em>output</em> map to identify the different subwatersheds.</dd><p></p>
+
+<p></p><dd>- <em>percent</em> is the percentage of non value cells
+resulting of the difference between the whole watershed and the sum of
+created subwatersheds. As working in modified landscapes where DEM
+informations aren't the most important for flow directions, an
+iterative process modifies the flow direction cells in contact of
+subwatershed boundaries to modify their direction values.</dd><p></p>
+</dl>
+
+<dl>
+<dt><em>res</em> and <em>snap</em> options are optionals:</dt>
+
+<p></p><dd>- <em>res</em> option allows the user to work with a different resolution of input DEM</dd><p></p>
+
+<p></p><dd>- <em>snap</em> option allows the user (if <em>file</em> or <em>point</em> option is used) to snap the outlet points on the line network under this threshold (distance in map units)</dd><p></p>
+
+</dl>
+
+
+
+
+<p></p><h2>EXAMPLES</h2>
+<h3>Subwatershed creation with stream burning method, outlets submitted by point vector map </h3>
+DEM is digged with 1 meter value, snap value equal to 2.5 meters, the
+minimum area of subwatersheds equals 1000 square meters and surface
+of subwatersheds must be at minimum 98% of the whole watershed (2% of
+cells with null value)
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.sbw -b -v dem=dem watershed=wshed stream=stream sbv=subwshedB burn=1 col=ident percent=2 area=1000 point=outlet snap=2.5
+</pre></div>
+<h3> Subwatershed creation with flow direction modified method, and smoothed corners of subwatersheds</h3>
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.sbw -f -c dem=dem watershed=wshed stream=stream sbv=subwshedF col=ident percent=2 area=1000
+</pre></div>
+<h3> Subwatershed creation with classical method, and  modified DEM resolution </h3>
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.sbw dem=dem watershed=wshed stream=stream sbv=subwshedC col=ident percent=2 area=1000 res=50
+</pre></div>
+<h3> Subwatershed creation with classical method, and  using confluence network for creating outlet </h3>
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.sbw -s dem=dem watershed=wshed stream=stream sbv=subwshedC col=ident percent=2 area=1000 
+</pre></div>
+
+
+
+<h2>SEE ALSO</h2>
+<a href="m.network.html">m.network</a>, <a href="http://grass.osgeo.org/grass64/manuals/html64_user/r.watershed.html">r.watershed</a>
+
+<h2>REFERENCES</h2>
+
+<p>Lagacherie, P., Moussa, R., Cormary, D., AND Molenat, J. 1996.
+Effect of DEM data source and sampling pattern on topographical
+parameters and on a topography-based hydrological model. <em>  In</em>
+"HYDROGIS'96. Application of Geographic Information System in Hydrology
+and Water Resources Management" (K. Kovar and H. P. Nachtnebel, eds.),
+pp. 191-200. IAHS, Vienna.
+</p><p>Mizgalewicz, P.J., Maidment, D.R., 1996. Modeling agrichemical
+transport in midwest rivers using geographic information systems.
+Center for Research in Water ressources Online Report 96-6, University
+of Texas, Austin, TX, 338pp.
+</p><p>Saunders, W.K., Maidment, D.R., 1996. A GIS assessment of
+nonpoint source pollution in the San Antonio- Nueces coastal basin.
+Center for Research in Water ressources Online Report 96-1, University
+of Texas, Austin, TX, 222pp. 
+</p><h2>AUTHORS</h2>
+Michael Rabotin, UMR LISAH, Montpellier, France
+<p>rabotin@supagro.inra.fr
+
+</p><p><em> Last Changed: </em> 23 January 2012
+</p>
+
+<p></p><hr>
+<P><a href="index.html">Main index</a> 
+<p>Copyright <a href="http://www.umr-lisah.fr/openfluid/index.php?page=welc&amp;lang=fr">UMR LISAH OpenFluid</a></p>
+
+</body></html>

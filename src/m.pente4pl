@@ -1,0 +1,130 @@
+#!/usr/bin/perl -w
+############################################################################
+#
+# MODULE:       m.pente4pl
+# AUTHOR(S):    Michael Rabotin (rabotin@supagro.inra.fr)
+# PURPOSE:      Slope calcul (or elevation difference calcul) between points (elevation down point is a mean calcul)
+# REQUIREMENTS: 
+#
+# COPYRIGHT:    (C) 2009 UMR LISAH - OpenFluid
+#
+#               This program is free software under the GNU General Public
+#               License (>=v2). Read the file COPYING that comes with GRASS
+#               for details.
+#
+#############################################################################
+
+
+
+# for each point, z altitude calculation is zi=( zi + zi-1 + zi+1 ) / 3
+
+
+
+use strict;
+use Getopt::Long;
+
+my ($infile1, $infile2, $outfile1, $slope, $slope2);
+
+GetOptions("input1=s", \$infile1, "input2=s", \$infile2, "output1=s", \$outfile1,"slope=s", \$slope, "slope2=f", \$slope2);
+
+if(!$infile1 or !$infile2 or !$outfile1 or !$slope or !$slope2) {
+  print "Usage: $0 --input1=[filename] --input2=[filename] --output1=[filename] --slope=[y or n] --slope2=[value]\n";
+  exit 0;
+}
+
+open (FILE1,"$infile1");
+open (FILE2,"$infile2");
+open (FILE3, ">> $outfile1");
+
+
+
+my($catA,$altiA,$xA,$yA)=split / /,<FILE1>;
+close (FILE1);
+
+my @tab2=<FILE2>;
+close (FILE2);
+chomp @tab2;
+my ($j,$k);
+my($cati,$altii,$xi,$yi);
+my($catj,$altij,$xj,$yj);
+my($catk,$altik,$xk,$yk);
+my $altiM;
+my $Ntab2 = scalar(@tab2);
+my $dist;
+my @tab3;
+
+for(my $i=0;$i<$Ntab2;$i++){
+
+	#for the first vertex
+	if ($i == 0){
+	($cati,$altii,$xi,$yi)=split / /,$tab2[$i];
+	$j=$i+1;
+	($catj,$altij,$xj,$yj)=split / /,$tab2[$j];
+	$k=$Ntab2-1;
+	($catk,$altik,$xk,$yk)=split / /,$tab2[$j];
+	}
+	#for the last vertex
+	elsif ( $i== $Ntab2-1){
+	($cati,$altii,$xi,$yi)=split / /,$tab2[$i];
+	$j=0;
+	($catj,$altij,$xj,$yj)=split / /,$tab2[$j];
+	$k=$i-1;
+	($catk,$altik,$xk,$yk)=split / /,$tab2[$j];
+	}
+	else {
+	# for all vertices with 1 <= i <= Ntab2-1
+	($cati,$altii,$xi,$yi)=split / /,$tab2[$i];
+	$j=$i+1;
+	($catj,$altij,$xj,$yj)=split / /,$tab2[$j];
+	$k=$i-1;
+	($catk,$altik,$xk,$yk)=split / /,$tab2[$j];
+	}
+#we smooth point altitude with the mean of the 3 altitudes (point in process, point before and point after)
+
+$altiM=($altii+$altij+$altik)/3;
+
+	
+	
+#we search the point in contact with the biggest slope
+# or with the biggest altitude difference between point A and point i
+
+# slope calculation or altitude difference between point A and point i
+	if ($altiM != $altiA){
+		if ($altiA > $altiM){
+			if ($slope=~ /y/){
+				my $pente=($altiA-$altiM)/sqrt(($xA-$xi)**2+($yA-$yi)**2+($altiA-$altiM)**2);
+				$tab3[$i]="$cati $pente";
+				}
+			else {
+				my $alti=($altiA-$altiM);
+				$tab3[$i]="$cati $alti";
+			}
+		}
+		else {
+		$tab3[$i]="$cati $slope2";
+		}
+	}
+	else {
+		$tab3[$i]="$cati $slope2";
+	}
+#end of for command
+}
+
+#we sort in reverse order the lines 
+my @tab4 = sort {
+	my @champs_a = split / /,$a;
+	my @champs_b = split / /,$b;
+	$champs_b[1] <=> $champs_a[1]
+	} @tab3;
+
+my $Ntab4 = scalar(@tab4);
+
+print FILE3 "$tab4[0]";
+
+close (FILE3);
+
+
+
+
+
+

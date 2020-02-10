@@ -1,0 +1,587 @@
+#!/bin/bash
+############################################################################
+#
+# MODULE:       m.douglas
+# AUTHOR(S):    Michael Rabotin (rabotin@supagro.inra.fr)
+# PURPOSE:      cleaning entities operation: smoothing area entities (Douglas Peuker algorithm)
+# REQUIREMENTS: m.testtype, m.anglelinepl, m.douglaspl, m.tripl
+# COPYRIGHT:    (C) 2009 UMR LISAH - OpenFluid
+#
+#               This program is free software under the GNU General Public
+#               License (>=v2). Read the file COPYING that comes with GRASS
+#               for details.
+#
+#############################################################################
+
+#%Module
+#%  description: smoothing areal entities (Douglas Peucker algorithm)
+#%  keywords : vector, generalization, node, Douglas-Peucker
+#%END
+#%option
+#% key: input
+#% type: string
+#% gisprompt: old,vector,vector
+#% description: Input vector map
+#% key_desc : name
+#% required : yes
+#%END
+#%option
+#% key: output
+#% type: string
+#% gisprompt: new,vector,vector
+#% description: Output vector map
+#% key_desc : name
+#% required : yes
+#%END
+#%option
+#% key: dist
+#% type: double
+#% description: Douglas Peucker distance threshold (in map units)
+#% required : yes
+#%END
+
+eval `g.gisenv`
+: ${GISDBASE?} ${LOCATION_NAME?} ${MAPSET?}
+
+if [ "$1" != "@ARGS_PARSED@" ] ; then
+  exec g.parser "$0" "$@"
+fi
+
+INPUT="$GIS_OPT_INPUT"
+OUTPUT="$GIS_OPT_OUTPUT"
+DIST="$GIS_OPT_DIST"
+
+
+if  [ -z "$GISBASE" ]
+then
+	echo ""
+	echo "You must start GRASS to launch this program"
+	echo ""
+	exit 2
+fi
+
+#GRASS version testing, must be >= 6.3
+
+Gversion1=`g.version |cut -d" " -f2 |cut -d"." -f1`
+Gversion2=`g.version |cut -d" " -f2 |cut -d"." -f2`
+
+if [ $Gversion1 -ge 6 ];then
+	if [ $Gversion1 = 6 ] && [ $Gversion2 -lt 3 ];then 
+		g.message -e message="You must have GRASS version 6.3.0 or higher"
+		exit 2
+	fi
+else
+	g.message -e message="You must have GRASS version 6.3.0 or higher"
+	exit 2
+
+fi
+#test driver (dbf only accepted)
+if [ "`db.connect -p|head -n 1 |cut -d":" -f2 `" != "dbf" ]
+then
+	g.message -e message="Sorry, but only dbf driver accepted "
+  exit 2
+fi 
+
+#awk testing
+if [ ! -x "`which awk`" ];then
+  g.message -e message="awk required, please install awk our gawk first"
+  exit 2
+fi
+
+#perl testing
+if [ ! -x "`which perl`" ];then
+  g.message -e message="perl required, please install perl first"
+  exit 2
+fi
+
+# setting environment, so that awk works properly in all languages
+unset LC_ALL
+LC_NUMERIC=C
+export LC_NUMERIC
+
+# all above OK - proceed: set up temporary files
+TMP="`g.tempfile pid=$$`"
+if [ $? -ne 0 ] || [ -z "$TMP" ] ; then
+    echo "ERROR: Unable to create temporary files." 1>&2
+    exit 2
+fi
+rm -f $TMP
+PROG=`basename $0 | sed 's/\./_/g'`
+NOW=$(date +"%F-%X")
+LOGFILE="$PROG-$NOW.log"
+
+#cleanup procedure
+cleanup()
+{
+  \rm -f $TMP
+    
+    
+   for ((u=1;u<=36;u+=1))
+  do
+    rm -f $TMP.${PROG}.$u
+  done
+
+  g.mremove -f vect="$INPUT"_dougtmp* --q
+  if [ -e ~/$LOGFILE ] && [ ! -s ~/$LOGFILE ] ;then
+		rm -f ~/$LOGFILE
+  fi
+}
+
+# what to do in case of user break:
+exitprocedure()
+{
+  echo -e "\nUser break!"
+  cleanup
+  exit 2
+}
+# shell check for user break (signal list: trap -l)
+trap "exitprocedure" 2 3 15
+
+
+
+#test des dependancies testing
+if [ ! -x "`which m.testtype`" ];then
+  g.message -e message="m.testtype subscript required, please install it first"
+  exit 2
+fi
+
+if [ ! -x "`which m.anglelinepl`" ];then
+  g.message -e message="m.anglelinepl subscript required, please install it first"
+  exit 2
+fi
+
+if [ ! -x "`which m.douglaspl`" ];then
+  g.message -e message="m.douglaspl subscript required, please install it first"
+  exit 2
+fi
+
+if [ ! -x "`which m.tripl`" ];then
+  g.message -e message="m.anglelinepl subscript required, please install it first"
+  exit 2
+fi
+
+#test if output vector map already exists
+eval `g.findfile element=vector file="$OUTPUT" `
+if [ "$file" ] ; then
+  if [ -z "$GRASS_OVERWRITE" ] || [ "$GRASS_OVERWRITE" -eq 0 ]; then
+    g.message -w message="<$OUTPUT> already exists in this mapset or in another mapset of this location. Use the --o flag to overwrite." 1>&2
+    exit 2
+  else
+    g.message -w message="<$OUTPUT>  already exists and will be overwritten"
+  fi
+fi
+
+
+#test if OUTPUT vector name is allowed
+v.in.region output=$OUTPUT --q  |grep -v "SQL" 2>$TMP.${PROG}.36
+	
+if [ -s "$TMP.${PROG}.36" ];then
+	g.message -w message="Illegal vector map name <$OUTPUT>" 1>&2
+    exit 2
+else
+	g.remove vect=$OUTPUT --q  
+fi
+
+#test if input temporary vector maps already exist
+
+g.mlist type=vect pattern="$INPUT"_dougtmp*  > $TMP.${PROG}.1
+if [ -s "$TMP.${PROG}.1" ];then
+  g.message -w message="<$INPUT>_dougtmp name for temporay file is already used in this mapset or in another mapset of this location"
+  cleanup
+  exit 2
+
+fi
+
+# test if input vector map exists
+g.findfile element=vector mapset=${MAPSET?} file=${INPUT} > /dev/null
+if [ $? -ne 0 ] ; then
+  g.message -w  message="<$INPUT> not found"
+  cleanup
+   exit 2
+fi
+
+
+m.testtype input=$INPUT > $TMP.${PROG}.2
+
+#if input vector map is not a polygon vector, exit program
+if [ "`cat $TMP.${PROG}.2`" != "polygone" ] ; then
+  g.message -e message="<$INPUT> isn't a vector polygon"
+  cleanup
+  exit 2
+fi
+
+#test DIST value
+if [ "`echo $DIST |grep "[[:digit:]]" | wc -c`" = "0"  ] ;then
+  g.message -e message="<DIST> value isn't numeric"
+  cleanup
+  exit 2
+fi
+
+if [ "`echo $DIST |grep "[[:alpha:]]" | wc -c`" != "0" ] ;then
+	g.message -e message="<DIST> value isn't numeric !!"
+	cleanup
+	exit 2
+fi
+
+
+g.region vect=$INPUT --q 2>>~/$LOGFILE
+# we transform INPUT into a line vector 
+v.category input=$INPUT output="$INPUT"_dougtmp type=boundary option=add  --q 2>>~/$LOGFILE
+v.type input="$INPUT"_dougtmp output="$INPUT"_dougtmp2 type=boundary,line  --q 2>>~/$LOGFILE
+v.extract input="$INPUT"_dougtmp2 output="$INPUT"_dougtmp2a type=line  --q 2>>~/$LOGFILE
+# breaking the lines at each intersection adn removing the duplicate lines
+v.clean input="$INPUT"_dougtmp2a output="$INPUT"_dougtmp3 type=line tool=break,rmdupl  --q 2>>~/$LOGFILE
+
+# identification of the lines with only 90° angles
+v.category input="$INPUT"_dougtmp3 type=line option=print > $TMP.${PROG}.3  --q 2>>~/$LOGFILE
+wc -l $TMP.${PROG}.3 |cut -d" " -f1 > $TMP.${PROG}.4 2>>~/$LOGFILE
+
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+
+
+typeset -i nbline
+nbline=1
+for i in `cat $TMP.${PROG}.3`;do
+
+	echo "*** $nbline on `cat $TMP.${PROG}.4` total lines *** "
+	v.extract input="$INPUT"_dougtmp3 output="$INPUT"_dougtmp4 type=line list=$i  --q 2>>~/$LOGFILE
+	#point extraction, calculation of the x, y coordinates 
+	v.to.points -v input="$INPUT"_dougtmp4 type=line output="$INPUT"_dougtmp5  --q 2>>~/$LOGFILE
+	v.db.addcol map="$INPUT"_dougtmp5 layer=2 columns="x double precision,y double precision"  --q 2>>~/$LOGFILE
+	v.to.db map="$INPUT"_dougtmp5 type=point layer=2 option=coor units=me column=x,y  --q 2>>~/$LOGFILE
+	v.db.select -c map="$INPUT"_dougtmp5 layer=2 column=cat,x,y fs=" " nv=0 --q > $TMP.${PROG}.5 2>>~/$LOGFILE
+	wc -l $TMP.${PROG}.5 |cut -d" " -f1 > $TMP.${PROG}.6 2>>~/$LOGFILE
+	nbidp2a=`cat $TMP.${PROG}.6`
+
+	# we only work with lines with more than 5 vertices  ( we never take the two first vertices, so we need 3 interior vertices for a line)
+	if [ "$nbidp2a" -gt 5 ];then
+		# $TMP.${PROG}.5 contains the list of the line vertices; we calculate the different angles between these vertices
+		
+		#call m.anglelinepl perl script
+		m.anglelinepl --input=$TMP.${PROG}.5 --output=$TMP.${PROG}.7 2>>~/$LOGFILE
+
+		#if $TMP.${PROG}.7 is empty
+		if [ ! -s "$TMP.${PROG}.7" ];then
+			#we put into $TMP.${PROG}.8 the line categories we need to process (lines with 90° angles)
+			echo "$i" >> $TMP.${PROG}.8 2>>~/$LOGFILE
+	
+		fi
+	fi	
+
+	rm -f $TMP.${PROG}.5 $TMP.${PROG}.6 $TMP.${PROG}.7 
+	g.remove vect="$INPUT"_dougtmp4,"$INPUT"_dougtmp5 --q 2>>~/$LOGFILE
+	
+	if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+	fi
+nbline=$nbline+1
+done
+
+v.extract input="$INPUT"_dougtmp3 output="$INPUT"_dougtmp6 type=line file=$TMP.${PROG}.8  --q 2>>~/$LOGFILE
+# INPUT_dougtmp6 contains only the lines to process
+
+#INPUT_dougtmp60 will be the negative of  INPUT_dougtmp6;
+# INPUT_dougtmp60 contains the lines we don't process
+v.category input="$INPUT"_dougtmp3 type=line option=print > $TMP.${PROG}.9 2>>~/$LOGFILE
+diff $TMP.${PROG}.9 $TMP.${PROG}.8 |grep -v "d" |cut -d" " -f2 > $TMP.${PROG}.10 2>>~/$LOGFILE
+v.extract -t input="$INPUT"_dougtmp3 output="$INPUT"_dougtmp60 type=line file=$TMP.${PROG}.10  --q 2>>~/$LOGFILE
+v.db.addtable map="$INPUT"_dougtmp60  --q 2>>~/$LOGFILE
+
+# we suppress the dbf of INPUT_dougtmp6 and we creat an other with x, y column and id
+v.db.connect -d map="$INPUT"_dougtmp6  --q 2>>~/$LOGFILE
+rm $GISDBASE/$LOCATION_NAME/$MAPSET/dbf/"$INPUT"_dougtmp6.dbf
+v.db.addtable map="$INPUT"_dougtmp6  --q 2>>~/$LOGFILE
+v.category input="$INPUT"_dougtmp6 type=line option=print > $TMP.${PROG}.11  --q 2>>~/$LOGFILE
+# we take the line vertices of INPUT_dougtmp6; creation of INPUT_dougtmp61
+v.to.points -v input="$INPUT"_dougtmp6 type=line output="$INPUT"_dougtmp61  --q 2>>~/$LOGFILE
+v.db.addcol map="$INPUT"_dougtmp61 layer=2 columns="x double precision,y double precision,id INTEGER"  --q 2>>~/$LOGFILE
+#coordinate calculation of the points of INPUT_dougtmp61
+v.to.db map="$INPUT"_dougtmp61 type=point layer=2 option=coor units=me column=x,y  --q 2>>~/$LOGFILE
+
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+
+########################### Douglas Peuker iterative process begin ####################
+# $TMP.${PROG}.11 contains the cat of the lines to process
+# we manage the file during the process 
+# until $TMP.${PROG}.11, process continues
+
+
+typeset -i nbline2
+nbline2=1
+
+while [ -s "$TMP.${PROG}.11" ];do
+        echo "*** $nbline2 line *** "
+	#we take the first cat
+	head -n 1 $TMP.${PROG}.11 > $TMP.${PROG}.12 2>>~/$LOGFILE
+	#we extract the first cat
+	v.extract input="$INPUT"_dougtmp6 output="$INPUT"_dougtmp7 type=line file=$TMP.${PROG}.12  --q 2>>~/$LOGFILE
+
+	#we extract the vertices of the lines and calculation of the point coordinates
+	v.to.points -v input="$INPUT"_dougtmp7 type=line output="$INPUT"_dougtmp8  --q 2>>~/$LOGFILE
+	v.db.addcol map="$INPUT"_dougtmp8 layer=2 columns="x double precision,y double precision,dist double precision"  --q 2>>~/$LOGFILE
+	v.to.db map="$INPUT"_dougtmp8 type=point layer=2 option=coor units=me column=x,y  --q 2>>~/$LOGFILE
+	v.db.select -c map="$INPUT"_dougtmp8 layer=2 column=x,y fs=" " nv=0  --q > $TMP.${PROG}.13 2>>~/$LOGFILE
+
+	#we create the neagtive of  INPUT_dougtmp6 (all the lines of  INPUT_dougtmp6 except the line in process; creation of INPUT_dougtmp62
+	diff $TMP.${PROG}.11 $TMP.${PROG}.12 | grep -v "d" |cut -d" " -f2 > $TMP.${PROG}.14 2>>~/$LOGFILE
+	v.extract input="$INPUT"_dougtmp6 output="$INPUT"_dougtmp62 type=line file=$TMP.${PROG}.14  --q 2>>~/$LOGFILE
+	rm -f $TMP.${PROG}.14
+	if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+	fi
+
+	#we verify that  $TMP.${PROG}.13 contains more than two points
+	wc -l $TMP.${PROG}.13 |cut -d":" -f1 > $TMP.${PROG}.15 2>>~/$LOGFILE
+	nbdp7a=`cat $TMP.${PROG}.15`
+	rm -f $TMP.${PROG}.15
+	rm -f $TMP.${PROG}.12
+
+	#we create the line with first and last vertices 
+	echo "L 2 1" > $TMP.${PROG}.16 2>>~/$LOGFILE
+	head -n 1 $TMP.${PROG}.13  >> $TMP.${PROG}.17 2>>~/$LOGFILE
+	cut -d" " -f1 $TMP.${PROG}.17 > $TMP.${PROG}.18 2>>~/$LOGFILE
+	x1=`cat $TMP.${PROG}.18`
+	cut -d" " -f2 $TMP.${PROG}.17 > $TMP.${PROG}.19 2>>~/$LOGFILE
+	y1=`cat $TMP.${PROG}.19`
+
+	rm -f $TMP.${PROG}.19
+	rm -f $TMP.${PROG}.18
+
+	tail -n 1 $TMP.${PROG}.13  >> $TMP.${PROG}.17 2>>~/$LOGFILE
+	tail -n 1 $TMP.${PROG}.13  > $TMP.${PROG}.20 2>>~/$LOGFILE
+	cut -d" " -f1 $TMP.${PROG}.20 > $TMP.${PROG}.18  2>>~/$LOGFILE
+	x2=`cat $TMP.${PROG}.18`
+	cut -d" " -f2 $TMP.${PROG}.20 > $TMP.${PROG}.19 2>>~/$LOGFILE
+	y2=`cat $TMP.${PROG}.19`
+
+	rm -f $TMP.${PROG}.19
+	rm -f $TMP.${PROG}.18
+	rm -f $TMP.${PROG}.20
+
+	echo " `cat $TMP.${PROG}.17`" >> $TMP.${PROG}.16 2>>~/$LOGFILE
+	echo "1 1" >>$TMP.${PROG}.16 2>>~/$LOGFILE
+
+	rm -f $TMP.${PROG}.13
+	if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+	fi
+	#for these two points we put id = 1 in  "$INPUT"_dougtmp61 
+	#(id=1 --> point treated  id=0 --> point non yet treated)
+	echo "UPDATE "$INPUT"_dougtmp61_2 SET id=1 WHERE x=$x1 AND y=$y1"|db.execute 2>>~/$LOGFILE
+	echo "UPDATE "$INPUT"_dougtmp61_2 SET id=1 WHERE x=$x2 AND y=$y2"|db.execute 2>>~/$LOGFILE
+
+	#if only two points : no simplification process 
+	
+	if [ "$nbdp7a" = "2" ];then
+		g.remove vect="$INPUT"_dougtmp6 --q 2>>~/$LOGFILE
+		g.rename vect="$INPUT"_dougtmp62,"$INPUT"_dougtmp6 --q 2>>~/$LOGFILE
+		g.remove vect="$INPUT"_dougtmp7,"$INPUT"_dougtmp8,"$INPUT"_dougtmp9 --q 2>>~/$LOGFILE
+		rm $TMP.${PROG}.16
+		rm $TMP.${PROG}.17
+		#if more than two points; Douglas Peucker process begins
+	else
+
+		# we creat the line with $TMP.${PROG}.16 (begin and end point of the process line)
+		
+		v.in.ascii -n input=$TMP.${PROG}.16 output="$INPUT"_dougtmp9 format=standard fs=" "  --q 2>>~/$LOGFILE
+		v.db.addtable map="$INPUT"_dougtmp9  --q 2>>~/$LOGFILE
+		rm -f $TMP.${PROG}.16
+		rm -f $TMP.${PROG}.17
+		#we calculate the distances between the new line and the points of the process line
+
+		v.distance from="$INPUT"_dougtmp8 to="$INPUT"_dougtmp9 from_type=point to_type=line from_layer=2 to_layer=1 upload=dist column=dist  --q 2>>~/$LOGFILE
+		v.db.select -c map="$INPUT"_dougtmp8 layer=2 column=cat,dist,lcat,along,x,y fs=" " nv=0  --q > $TMP.${PROG}.21 2>>~/$LOGFILE
+
+		# we take the longest distance , we verify that the distance is superior than distmin; call m.douglaspl script
+		m.douglaspl --input=$TMP.${PROG}.21 --output1=$TMP.${PROG}.22 --output2=$TMP.${PROG}.23 --output3=$TMP.${PROG}.24 --dist=$DIST 2>>~/$LOGFILE
+		if [ ! -z "`cat ~/$LOGFILE`" ];then
+			g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+			cleanup
+			exit 2
+		fi
+		rm -f $TMP.${PROG}.21
+		#if dist  < distmin , no simplification process; 
+		
+		if [ -s "$TMP.${PROG}.22" ]; then
+			g.remove vect="$INPUT"_dougtmp6,"$INPUT"_dougtmp7,"$INPUT"_dougtmp8,"$INPUT"_dougtmp9 --q 2>>~/$LOGFILE
+			g.rename vect="$INPUT"_dougtmp62,"$INPUT"_dougtmp6 --q 2>>~/$LOGFILE
+			rm -f $TMP.${PROG}.22
+			rm -f $TMP.${PROG}.24 $TMP.${PROG}.25 $TMP.${PROG}.26 
+			rm -f $TMP.${PROG}.23
+
+		#if dist > distmin
+		else
+			#we cut the process line in two lines
+			v.segment input="$INPUT"_dougtmp6 output="$INPUT"_dougtmp10  --q < $TMP.${PROG}.23 2>/dev/null
+
+			if [ -e $GISDBASE/$LOCATION_NAME/$MAPSET/dbf/"$INPUT"_dougtmp62.dbf ];then
+				# if INPUT_dougtmp62 is not empty (still lines to process)
+				v.db.addtable map="$INPUT"_dougtmp10  --q 2>>~/$LOGFILE
+				#we patch INPUT_dougtmp62 and INPUT_dougtmp10 (which contains the process segmented line);
+				# and we rename in  INPUT_dougtmp6 for the next loop
+				v.patch -e input="$INPUT"_dougtmp10,"$INPUT"_dougtmp62 output="$INPUT"_dougtmp11  --q 2>>~/$LOGFILE
+
+				g.remove vect="$INPUT"_dougtmp6,"$INPUT"_dougtmp10,"$INPUT"_dougtmp62,"$INPUT"_dougtmp9 --q 2>>~/$LOGFILE
+				g.remove vect="$INPUT"_dougtmp7,"$INPUT"_dougtmp8 --q  2>>~/$LOGFILE
+				g.rename vect="$INPUT"_dougtmp11,"$INPUT"_dougtmp6 --q 2>>~/$LOGFILE
+			else
+				# if INPUT_dougtmp62 is empty (no more line to process)
+				# and we rename in INPUT_dougtmp6 for the next loop
+				g.remove vect="$INPUT"_dougtmp6,"$INPUT"_dougtmp62,"$INPUT"_dougtmp9 --q 2>>~/$LOGFILE
+				g.remove vect="$INPUT"_dougtmp7,"$INPUT"_dougtmp8 --q 2>>~/$LOGFILE
+				g.rename vect="$INPUT"_dougtmp10,"$INPUT"_dougtmp6 --q 2>>~/$LOGFILE
+
+			fi
+			#we save the coordinates of the point which has segmented the line
+			cut -d" " -f1 $TMP.${PROG}.24 > $TMP.${PROG}.25 2>>~/$LOGFILE
+			xM=`cat $TMP.${PROG}.25`
+			
+			cut -d" " -f2 $TMP.${PROG}.24 > $TMP.${PROG}.26 2>>~/$LOGFILE
+			yM=`cat $TMP.${PROG}.26`
+			
+			rm -f $TMP.${PROG}.24 $TMP.${PROG}.25 $TMP.${PROG}.26
+			rm $TMP.${PROG}.23
+			rm $TMP.${PROG}.22
+			#and we put id = 1
+			echo "UPDATE "$INPUT"_dougtmp61_2 SET id=1 WHERE x=$xM AND y=$yM"|db.execute 2>>~/$LOGFILE
+
+		fi
+	if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+	fi		
+	fi
+	#if INPUT_dougtmp6.dbf doesn't exist , we create in case of there are still entities
+	if [ ! -e $GISDBASE/$LOCATION_NAME/$MAPSET/dbf/"$INPUT"_dougtmp6.dbf ];then
+		v.info map="$INPUT"_dougtmp6 | grep "lines:" | cut -c30-40 > $TMP.${PROG}.27 2>>~/$LOGFILE
+		typeset -i line1
+		line1=`cat $TMP.${PROG}.27`
+		rm -f $TMP.${PROG}.27
+		if [ "$line1" != "0" ];then
+			#we create the INPUT_dougtmp6 table
+			v.db.addtable map="$INPUT"_dougtmp6 --q 2>>~/$LOGFILE
+		fi
+	fi
+	#we extract the cats of  INPUT_dougtmp6 in $TMP.${PROG}.11 and we start an other loop
+	#if  INPUT_dougtmp6 is empty , we quit the loop
+	v.category input="$INPUT"_dougtmp6 type=line option=print  --q > $TMP.${PROG}.11 2>>~/$LOGFILE
+	if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+	fi
+nbline2=$nbline2+1
+done
+########################### Douglas Peuker iterative process ending ####################
+
+#we extract the points of  INPUT_dougtmp61 which have  ID=1 (points kept)
+v.extract input="$INPUT"_dougtmp61 output="$INPUT"_dougtmp63 type=point layer=2 where="(ID=1)"  --q 2>>~/$LOGFILE
+#we extract teh cats of the lines which have these points
+v.db.select -c map="$INPUT"_dougtmp63 layer=2 column=lcat  --q |sort -t" " -k1n > $TMP.${PROG}.28 2>>~/$LOGFILE
+uniq -u $TMP.${PROG}.28 > $TMP.${PROG}.29 2>>~/$LOGFILE
+uniq -d $TMP.${PROG}.28 >> $TMP.${PROG}.29 2>>~/$LOGFILE
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+#for each process line, for command
+for g in `cat $TMP.${PROG}.29`;do
+	#we extract the points  (x, y and along) for each cat of the for command
+	v.db.select -c map="$INPUT"_dougtmp63 layer=2 column=along,x,y where="lcat=$g" fs=" "  --q > $TMP.${PROG}.30 2>>~/$LOGFILE
+
+	# call m.tripl script which will sort points by along column
+	m.tripl --input=$TMP.${PROG}.30 --output=$TMP.${PROG}.31 --col=0 2>>~/$LOGFILE
+	rm $TMP.${PROG}.30
+
+
+	#creating of an ascii input for the creation of the lines
+	wc -l $TMP.${PROG}.31 |cut -d" " -f1 > $TMP.${PROG}.32 2>>~/$LOGFILE
+	nbdp23=`cat $TMP.${PROG}.32`
+	echo "L $nbdp23 1" >> $TMP.${PROG}.33 2>>~/$LOGFILE
+	cut -d" " -f2,3 $TMP.${PROG}.31 > $TMP.${PROG}.34 2>>~/$LOGFILE
+	echo " `cat $TMP.${PROG}.34`" >> $TMP.${PROG}.33 2>>~/$LOGFILE
+	echo "1 $g" >> $TMP.${PROG}.33 2>>~/$LOGFILE
+	if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+	fi
+	rm -f $TMP.${PROG}.31
+	rm -f $TMP.${PROG}.32
+	rm -f $TMP.${PROG}.34
+done
+
+#we create the file of the new simplified lines and create the atttribute table
+v.in.ascii -n input=$TMP.${PROG}.33 output="$INPUT"_dougtmp10 format=standard fs=" "  --q 2>>~/$LOGFILE
+v.db.addtable map="$INPUT"_dougtmp10  --q 2>>~/$LOGFILE
+# we patch this layer with the negative of INPUT_dougtmp60
+v.patch -e input="$INPUT"_dougtmp10,"$INPUT"_dougtmp60 output="$INPUT"_dougtmp11  --q 2>>~/$LOGFILE
+# we clean the result of the patch
+v.clean input="$INPUT"_dougtmp11 output="$INPUT"_dougtmp12 type=line tool=snap,rmdupl,break thresh=0.001  --q 2>>~/$LOGFILE
+#we transform the lines into boundaries + calculation of the cat
+
+v.type input="$INPUT"_dougtmp12 output="$INPUT"_dougtmp13 type=line,boundary  --q 2>>~/$LOGFILE
+
+v.category input="$INPUT"_dougtmp13 output="$INPUT"_dougtmp14 type=boundary option=add  --q 2>>~/$LOGFILE
+# we add the centroids, creation of a polygon vector
+
+v.centroids input="$INPUT"_dougtmp14 output="$INPUT"_dougtmp15a option=add  --q 2>>~/$LOGFILE
+
+v.clean input="$INPUT"_dougtmp15a output="$INPUT"_dougtmp15b tool=bpol  --q 2>>~/$LOGFILE
+
+#we overkill the topology
+v.out.ogr -c input="$INPUT"_dougtmp15b dsn=/tmp/ type=area olayer="$INPUT"_dougtmp15b  --q 2>/dev/null
+v.in.ogr -t dsn=/tmp/ output="$INPUT"_dougtmp15 layer="$INPUT"_dougtmp15b  --q 2>/dev/null
+rm -f /tmp/"$INPUT"_dougtmp15b*
+g.remove vect="$INPUT"_dougtmp15a,"$INPUT"_dougtmp15b --q 2>>~/$LOGFILE
+#we add the attribute table of INPUT
+# we copy the attribut of  INPUT into INPUT_dougtmp15 and be careful to the cat
+
+
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+ 
+v.db.addtable map="$INPUT"_dougtmp15 columns="b_cat INTEGER" layer=1 --q 2>>~/$LOGFILE
+v.distance from="$INPUT"_dougtmp15 from_type=centroid from_layer=1 to=$INPUT to_type=area to_layer=1 upload=cat column=b_cat --q 2>>~/$LOGFILE
+v.reclass input="$INPUT"_dougtmp15 output="$INPUT"_dougtmp16 column=b_cat --q 2>>~/$LOGFILE
+
+
+db.copy from_table=$INPUT to_table="$INPUT"_dougtmp16  --q 2>>~/$LOGFILE
+
+v.db.connect map="$INPUT"_dougtmp16 table="$INPUT"_dougtmp16 layer=1  --q 2>>~/$LOGFILE
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+g.rename vect="$INPUT"_dougtmp16,$OUTPUT --q 2>/dev/null
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+#cleanup procedure
+cleanup
+exit 0
+
+
+

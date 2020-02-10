@@ -1,0 +1,605 @@
+#!/bin/bash
+############################################################################
+#
+# MODULE:       m.sbwhole
+# AUTHOR(S):    Michael Rabotin (rabotin@supagro.inra.fr)
+# PURPOSE:      subwatershed cration and fillin hole in watershed
+# REQUIREMENTS: m.compfloatpl,m.splicepl,m.compaltipl
+#
+# COPYRIGHT:    (C) 2009 UMR LISAH - OpenFluid
+#
+#               This program is free software under the GNU General Public
+#               License (>=v2). Read the file COPYING that comes with GRASS
+#               for details.
+#
+#############################################################################
+#%Module
+#%  description: subwatershed cration and fillin hole in watershed
+#%END
+#%option
+#% key: drainage
+#% type: string
+#% gisprompt: old,cell,raster
+#% description: Name of drainage raster
+#% key_desc : name
+#% required : yes
+#%END
+#%option
+#% key: watershed
+#% type: string
+#% gisprompt: old,cell,raster
+#% description: Input watershed raster
+#% key_desc : name
+#% required : yes
+#%END
+#%option
+#% key: subwatershed
+#% type: string
+#% gisprompt: new,cell,raster
+#% description: Output subwatershed name
+#% key_desc : name
+#% required : yes
+#%END
+#%option
+#% key: file 
+#% type: string
+#% description: Name of ascii coordinate points file for basin outlets  
+#% required : yes
+#%END
+#%option
+#% key: res
+#% type: double
+#% description: raster resolution output
+#% required : no
+#%END
+#%option
+#% key: percent
+#% type: double
+#% description: percent of zero value accepted
+#% required : yes
+#%END
+#%option
+#% key: error 
+#% type: string
+#% description: Name of ascii file for error 
+#% required : yes
+#%END
+
+
+eval `g.gisenv`
+: ${GISDBASE?} ${LOCATION_NAME?} ${MAPSET?}
+
+if [ "$1" != "@ARGS_PARSED@" ] ; then
+  exec g.parser "$0" "$@"
+fi
+
+DRAIN="$GIS_OPT_DRAINAGE"
+BV="$GIS_OPT_WATERSHED"
+SBV="$GIS_OPT_SUBWATERSHED"
+FILE="$GIS_OPT_FILE"
+RES="$GIS_OPT_RES"
+PERCENT="$GIS_OPT_PERCENT"
+ERROR="$GIS_OPT_ERROR"
+
+eval `g.gisenv`
+: ${GISDBASE?} ${LOCATION_NAME?} ${MAPSET?}
+if  [ -z "$GISBASE" ]
+then
+	echo ""
+	echo "You must start GRASS to launch this program"
+	echo ""
+	exit 2
+fi
+
+#GRASS version testing, must be >= 6.3
+
+Gversion1=`g.version |cut -d" " -f2 |cut -d"." -f1`
+Gversion2=`g.version |cut -d" " -f2 |cut -d"." -f2`
+
+if [ $Gversion1 -ge 6 ];then
+	if [ $Gversion1 = 6 ] && [ $Gversion2 -lt 3 ];then 
+		g.message -e message="You must have GRASS version 6.3.0 or higher"
+		exit 2
+	fi
+else
+	g.message -e message="You must have GRASS version 6.3.0 or higher"
+	exit 2
+
+fi
+
+# awk testing
+if [ ! -x "`which awk`" ];then
+  g.message -e message="awk required, please install awk our gawk first"
+  exit 2
+fi
+
+#perl testing
+if [ ! -x "`which perl`" ];then
+  g.message -e message="perl required, please install perl first"
+  exit 2
+fi
+
+#test driver (dbf only accepted)
+if [ "`db.connect -p|head -n 1 |cut -d":" -f2 `" != "dbf" ]
+then
+	g.message -e message="Sorry, but only dbf driver accepted "
+  exit 2
+fi 
+
+# setting environment, so that awk works properly in all languages
+unset LC_ALL
+LC_NUMERIC=C
+export LC_NUMERIC
+
+# all above OK - proceed: set up temporary files
+TMP="`g.tempfile pid=$$`"
+if [ $? -ne 0 ] || [ -z "$TMP" ] ; then
+    echo "ERROR: Unable to create temporary files." 1>&2
+    exit 2
+fi
+rm -f $TMP
+PROG=`basename $0 | sed 's/\./_/g'`
+NOW=$(date +"%F-%X")
+LOGFILE="$PROG-$NOW.log"
+
+#cleanup procedure
+cleanup()
+{
+  \rm -f $TMP
+   rm -f $TMP.${PROG}
+   for ((u=1;u<=26;u+=1))
+  do
+    rm -f $TMP.${PROG}.$u
+  done
+  r.mask -r input=MASK --q 2>/dev/null
+  
+  g.mremove -f rast="$SBV"_sbwholetmp* --q
+   if [ -e ~/$LOGFILE ] && [ ! -s ~/$LOGFILE ] ;then
+		rm -f ~/$LOGFILE
+	fi
+}
+
+# what to do in case of user break:
+exitprocedure()
+{
+  echo -e "\nUser break!"
+  cleanup
+  exit 2
+}
+# shell check for user break (signal list: trap -l)
+trap "exitprocedure" 2 3 15
+
+
+
+# dependancies testing
+if [ ! -x "`which m.compfloatpl`" ];then
+  g.message -e message="m.compfloatpl subscript required, please install it first"
+  exit 2
+fi
+
+if [ ! -x "`which m.compaltipl`" ];then
+  g.message -e message="m.compaltipl subscript required, please install it first"
+  exit 2
+fi
+
+if [ ! -x "`which m.splicepl`" ];then
+  g.message -e message="m.splicepl subscript required, please install it first"
+  exit 2
+fi
+
+#test if SBV RASTER name is allowed
+v.in.region output=$SBV --q  |grep -v "SQL" 2>$TMP.${PROG}.26
+	
+if [ -s "$TMP.${PROG}.26" ];then
+	g.message -w message="Illegal raster map name <$SBV>" 1>&2
+    exit 2
+else
+	g.remove vect=$SBV --q  
+fi
+
+
+
+#test if input temporary raster map already exist
+
+g.mlist type=rast pattern="$SBV"_sbwholetmp*  > $TMP.${PROG}.1
+if [ -s "$TMP.${PROG}.1" ];then
+  g.message -w message="<$SBV>_sbwholetmp name for temporay raster files is already used in this mapset or in another mapset of this location"
+  cleanup
+  exit 2
+
+fi
+
+#test if raster map BV exists 
+g.findfile element=cell mapset=${MAPSET?} file=${BV} > /dev/null
+if [ $? -ne 0 ] ; then
+ g.message -e message="<$BV> doesn't exist !"
+ cleanup
+ exit 2
+fi
+
+#test if raster map DRAIN exists
+g.findfile element=cell mapset=${MAPSET?} file=${DRAIN} > /dev/null
+if [ $? -ne 0 ] ; then
+ g.message -e message="<$DRAIN> doesn't exist !"
+ cleanup
+ exit 2
+fi
+
+# test if FILE file exists
+if [ -z `echo "$FILE"` ];then
+  g.message -e message="No ascii file for basin outlets !!"
+  cleanup
+  exit 2
+fi
+
+#test if RES is alphanumeric or numeric 
+if [ ! -z "$RES" ];then
+	if [ "`echo $RES |grep "[[:digit:]]" | wc -c`" = "0" ] ;then
+		g.message -e message="Resolution pixel value isn't numeric !!"
+		cleanup
+		exit 2
+	fi
+	if [ "`echo $RES |grep "[[:alpha:]]" | wc -c`" != "0" ] ;then
+		g.message -e message="Resolution pixel value isn't numeric !!"
+		cleanup
+		exit 2
+	fi
+
+fi
+
+#test if PERCENT is alphanumeric or numeric 
+if [ "`echo $PERCENT |grep "[[:digit:]]" | wc -c`" = "0"  ] ;then
+	g.message -e message="Ratio zero value isn't numeric !!"
+	cleanup
+	exit 2
+fi
+if [ "`echo $PERCENT |grep "[[:alpha:]]" | wc -c`" != "0" ] ;then
+		g.message -e message="Ratio zero value isn't numeric !!"
+		cleanup
+		exit 2
+fi
+m.compfloatpl --val1=$PERCENT --sign="<=" --val2=100 > $TMP.${PROG}.2
+if [ ! -s "$TMP.${PROG}.2" ];then
+	g.message -e message="Percent value is superior at 100 !!"
+	cleanup
+	exit 2
+fi
+
+
+if [ ! -z "$RES" ];then
+	g.region res=$RES --q 2>>~/$LOGFILE
+fi
+
+typeset -i b
+b=1
+
+for a in `cat $FILE`;do
+	r.water.outlet drainage=$DRAIN basin="$SBV"_sbwholetmp_"$b" easting=`echo "$a"|cut -d"|" -f2` northing=`echo "$a"|cut -d"|" -f3` --q 2>>~/$LOGFILE
+	echo ""$SBV"_sbwholetmp_"$b"">> $TMP.${PROG}.3 2>>~/$LOGFILE
+
+	b="$b"+1
+done
+echo "`cat $TMP.${PROG}.3`" | awk '{ OFS = "," ; ORS = ","; $1 = $1; print $0 }' > $TMP.${PROG}.4	 2>>~/$LOGFILE
+#we patch the subwaterheds together; be careful if they are more than 200 SBV, patch with several step 
+wc -l $TMP.${PROG}.3 |cut -d" " -f1 > $TMP.${PROG}.5 2>>~/$LOGFILE
+typeset -i nb
+nb=`cat $TMP.${PROG}.5`
+typeset -i c
+c=1
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+fi
+
+
+
+if [ "$nb" = "1" ];then
+  g.copy rast=`cat $TMP.${PROG}.3`,"$SBV"_sbwholetmp_p_t --q 2>>~/$LOGFILE
+else
+
+  if [ "$nb" -gt 200 ];then
+          while [ "$nb" -gt 200 ];do
+                  head -n 200 $TMP.${PROG}.3 > $TMP.${PROG}.6 2>>~/$LOGFILE
+                  echo "`cat $TMP.${PROG}.6`" | awk '{ OFS = "," ; ORS = ","; $1 = $1; print $0 }' > $TMP.${PROG}.7	 2>>~/$LOGFILE
+                  r.patch -z input=`cat $TMP.${PROG}.7` output="$SBV"_sbwholetmp_p_"$c" --q 2>>~/$LOGFILE
+	
+                  echo ""$SBV"_sbwholetmp_p_"$c"" >> $TMP.${PROG}.9 2>>~/$LOGFILE
+                  m.splicepl 201-$nb $TMP.${PROG}.3 > $TMP.${PROG}.8 2>>~/$LOGFILE
+		  	 
+                  rm -f $TMP.${PROG}.3
+                  mv $TMP.${PROG}.8 $TMP.${PROG}.3 2>>~/$LOGFILE
+                  wc -l $TMP.${PROG}.3 |cut -d" " -f1 > $TMP.${PROG}.5 2>>~/$LOGFILE
+                  nb=`cat $TMP.${PROG}.5`
+				  if [ "$nb" -lt 200 ];then
+					c=$c+1
+					echo "`cat $TMP.${PROG}.3`" | awk '{ OFS = "," ; ORS = ","; $1 = $1; print $0 }' > $TMP.${PROG}.7	 2>>~/$LOGFILE
+					r.patch -z input=`cat $TMP.${PROG}.7` output="$SBV"_sbwholetmp_p_"$c" --q 2>>~/$LOGFILE
+						echo ""$SBV"_sbwholetmp_p_"$c"" >> $TMP.${PROG}.9 2>>~/$LOGFILE
+				  fi
+				  rm -f $TMP.${PROG}.6
+				  rm -f $TMP.${PROG}.7
+				  c=$c+1
+				  if [ ! -z "`cat ~/$LOGFILE`" ];then
+					g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+					cleanup
+					exit 2
+				  fi
+				  
+          done
+  
+          
+          echo "`cat $TMP.${PROG}.9`" | awk '{ OFS = "," ; ORS = ","; $1 = $1; print $0 }' > $TMP.${PROG}.10	 2>>~/$LOGFILE
+          r.patch -z input=`cat $TMP.${PROG}.10` output="$SBV"_sbwholetmp_p_t --q 2>>~/$LOGFILE
+	 
+          g.remove rast=`cat $TMP.${PROG}.10` --q 2>>~/$LOGFILE
+          rm -f $TMP.${PROG}.9
+          rm -f $TMP.${PROG}.10
+		  if [ ! -z "`cat ~/$LOGFILE`" ];then
+			g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+			cleanup
+			exit 2
+		 fi
+  
+  else
+          r.patch -z input=`cat $TMP.${PROG}.4` output="$SBV"_sbwholetmp_p_t --q 2>>~/$LOGFILE
+  
+  fi
+fi
+	
+g.remove rast=`cat $TMP.${PROG}.4` --q 2>>~/$LOGFILE
+rm -f $TMP.${PROG}.5
+rm -f $TMP.${PROG}.3
+rm -f $TMP.${PROG}.4
+rm -f $TMP.${PROG}.6
+rm -f $TMP.${PROG}.7
+rm -f $TMP.${PROG}.8
+#clipping SBV_patch_t with the watershed
+r.mask input=$BV --q 2>>~/$LOGFILE
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+fi
+
+#testing Null value presence  (cat = 0);
+#comparison of the value of $TMP.${PROG}.11 with PERCENT
+# count the percentage of 0
+r.stats --q -p -n input="$SBV"_sbwholetmp_p_t fs="|"|grep "^0"|tail -n 1 |cut -d"|" -f2 |sed 's/%//g' |sed 's/ //g'> $TMP.${PROG}.11 2>>~/$LOGFILE
+#security for  >=  100/ of null value
+
+ACTUALV=`cat $TMP.${PROG}.11`
+m.compfloatpl --val1=$ACTUALV --sign="<=" --val2=100 > $TMP.${PROG}.12 2>>~/$LOGFILE
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+fi
+
+if [ ! -s "$TMP.${PROG}.12" ];then
+	cleanup
+        echo "error" > $ERROR
+	exit 2
+fi
+
+
+echo "val `cat $TMP.${PROG}.11`" > $TMP.${PROG}.13 2>>~/$LOGFILE
+echo "percent $PERCENT" > $TMP.${PROG}.14 2>>~/$LOGFILE
+m.compaltipl --input1=$TMP.${PROG}.14 --input2=$TMP.${PROG}.13 --output=$TMP.${PROG}.15 2>>~/$LOGFILE
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+fi
+#if in  $TMP.${PROG}.15, val presence; we can stop the loop
+#otherwise we continue
+echo "*** reference percent = $PERCENT ; actual percent = `cat $TMP.${PROG}.11` ***"
+
+
+rm -f $TMP.${PROG}.11
+rm -f $TMP.${PROG}.13
+rm -f $TMP.${PROG}.14
+
+
+#if $TMP.${PROG}.15 = percent, starting the  r.mapcalc loop
+#until 30 loop max 
+typeset -i nbwhole
+nbwhole=1
+
+while [ "`cat $TMP.${PROG}.15`" = "percent" ];do
+
+
+
+
+	echo ""$SBV"_sbwholetmp6 = if ("$SBV"_sbwholetmp_p_t[0,0] == 0 && "$SBV"_sbwholetmp_p_t[1,0] != 0,6)" > $TMP.${PROG}.16 2>>~/$LOGFILE
+	r.mapcalc  < $TMP.${PROG}.16 2>>~/$LOGFILE 
+
+	echo ""$SBV"_sbwholetmp7 = if ("$SBV"_sbwholetmp_p_t[0,0] == 0 && "$SBV"_sbwholetmp_p_t[1,1] != 0,7)" > $TMP.${PROG}.17 2>>~/$LOGFILE
+	r.mapcalc  < $TMP.${PROG}.17 2>>~/$LOGFILE
+
+	echo ""$SBV"_sbwholetmp8 = if ("$SBV"_sbwholetmp_p_t[0,0] == 0 && "$SBV"_sbwholetmp_p_t[0,1] != 0,8)" > $TMP.${PROG}.18 2>>~/$LOGFILE
+	r.mapcalc  < $TMP.${PROG}.18 2>>~/$LOGFILE
+
+	echo ""$SBV"_sbwholetmp1 = if ("$SBV"_sbwholetmp_p_t[0,0] == 0 && "$SBV"_sbwholetmp_p_t[-1,1] != 0,1)" > $TMP.${PROG}.19 2>>~/$LOGFILE
+	r.mapcalc   < $TMP.${PROG}.19 2>>~/$LOGFILE
+
+	echo ""$SBV"_sbwholetmp2 = if ("$SBV"_sbwholetmp_p_t[0,0] == 0 && "$SBV"_sbwholetmp_p_t[-1,0] != 0,2)" > $TMP.${PROG}.20 2>>~/$LOGFILE
+	r.mapcalc   < $TMP.${PROG}.20 2>>~/$LOGFILE
+
+	echo ""$SBV"_sbwholetmp3 = if ("$SBV"_sbwholetmp_p_t[0,0] == 0 && "$SBV"_sbwholetmp_p_t[-1,-1] != 0,3)" > $TMP.${PROG}.21 2>>~/$LOGFILE
+	r.mapcalc   < $TMP.${PROG}.21 2>>~/$LOGFILE
+
+	echo ""$SBV"_sbwholetmp4 = if ("$SBV"_sbwholetmp_p_t[0,0] == 0 && "$SBV"_sbwholetmp_p_t[0,-1] != 0,4)" > $TMP.${PROG}.22 2>>~/$LOGFILE
+	r.mapcalc   < $TMP.${PROG}.22 2>>~/$LOGFILE
+
+	echo ""$SBV"_sbwholetmp5 = if ("$SBV"_sbwholetmp_p_t[0,0] == 0 && "$SBV"_sbwholetmp_p_t[1,-1] != 0,5)" > $TMP.${PROG}.23 2>>~/$LOGFILE
+	r.mapcalc  < $TMP.${PROG}.23 2>>~/$LOGFILE
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+fi
+
+
+	echo ""$SBV"_sbwholetmp9 = if ("$SBV"_sbwholetmp6,"$SBV"_sbwholetmp6,$DRAIN)" > $TMP.${PROG}.24 2>>~/$LOGFILE
+	r.mapcalc  < $TMP.${PROG}.24 2>>~/$LOGFILE
+
+	echo ""$SBV"_sbwholetmp10 = if ("$SBV"_sbwholetmp7,"$SBV"_sbwholetmp7,"$SBV"_sbwholetmp9)" > $TMP.${PROG}.24 2>>~/$LOGFILE
+	r.mapcalc   < $TMP.${PROG}.24 2>>~/$LOGFILE
+
+	echo ""$SBV"_sbwholetmp11 = if ("$SBV"_sbwholetmp8,"$SBV"_sbwholetmp8,"$SBV"_sbwholetmp10)" > $TMP.${PROG}.24 2>>~/$LOGFILE
+	r.mapcalc  < $TMP.${PROG}.24 2>>~/$LOGFILE
+
+	echo ""$SBV"_sbwholetmp12 = if ("$SBV"_sbwholetmp1,"$SBV"_sbwholetmp1,"$SBV"_sbwholetmp11)" > $TMP.${PROG}.24 2>>~/$LOGFILE
+	r.mapcalc  < $TMP.${PROG}.24 2>>~/$LOGFILE
+
+	echo ""$SBV"_sbwholetmp13 = if ("$SBV"_sbwholetmp2,"$SBV"_sbwholetmp2,"$SBV"_sbwholetmp12)" > $TMP.${PROG}.24 2>>~/$LOGFILE
+	r.mapcalc  < $TMP.${PROG}.24 2>>~/$LOGFILE
+
+	echo ""$SBV"_sbwholetmp14 = if ("$SBV"_sbwholetmp3,"$SBV"_sbwholetmp3,"$SBV"_sbwholetmp13)" > $TMP.${PROG}.24 2>>~/$LOGFILE
+	r.mapcalc  < $TMP.${PROG}.24 2>>~/$LOGFILE
+
+	echo ""$SBV"_sbwholetmp15 = if ("$SBV"_sbwholetmp4,"$SBV"_sbwholetmp4,"$SBV"_sbwholetmp14)" > $TMP.${PROG}.24 2>>~/$LOGFILE
+	r.mapcalc  < $TMP.${PROG}.24 2>>~/$LOGFILE
+
+	echo ""$SBV"_sbwholetmp16 = if ("$SBV"_sbwholetmp5,"$SBV"_sbwholetmp5,"$SBV"_sbwholetmp15)" > $TMP.${PROG}.24 2>>~/$LOGFILE
+	r.mapcalc  < $TMP.${PROG}.24 2>>~/$LOGFILE
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+fi
+	g.remove rast=$DRAIN --q 2>>~/$LOGFILE
+	g.rename rast="$SBV"_sbwholetmp16,$DRAIN --q 2>>~/$LOGFILE
+        for ((w=1;w<=15;w+=1))
+        do
+          g.remove rast="$SBV"_sbwholetmp"$w" --q   2>>~/$LOGFILE
+        done
+  
+        rm -f $TMP.${PROG}.16 $TMP.${PROG}.17 $TMP.${PROG}.18 $TMP.${PROG}.19 $TMP.${PROG}.20 $TMP.${PROG}.21 $TMP.${PROG}.22
+        rm -f $TMP.${PROG}.23 $TMP.${PROG}.24
+	
+
+	typeset -i bb
+	bb=1
+
+	for aa in `cat $FILE`;do
+
+		r.water.outlet drainage=$DRAIN basin="$SBV"_sbwholetmp_"$bb" easting=`echo "$aa"|cut -d"|" -f2` northing=`echo "$aa"|cut -d"|" -f3`  --q 2>>~/$LOGFILE
+
+		echo ""$SBV"_sbwholetmp_"$bb"">> $TMP.${PROG}.3 2>>~/$LOGFILE
+
+		bb="$bb"+1
+	done
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+fi
+
+
+	echo "`cat $TMP.${PROG}.3`" | awk '{ OFS = "," ; ORS = ","; $1 = $1; print $0 }' > $TMP.${PROG}.4	 2>>~/$LOGFILE
+	#we will patch the subwatersheds together ; be careful if they are more than 200 SBV, several loops
+	wc -l $TMP.${PROG}.3 |cut -d" " -f1 > $TMP.${PROG}.5 2>>~/$LOGFILE
+	typeset -i nb2
+	nb2=`cat $TMP.${PROG}.5`
+	typeset -i cc
+	cc=10
+        if [ "$nb2" = "1" ];then
+          g.copy rast=`cat $TMP.${PROG}.3`,"$SBV"_sbwholetmp_p_tt --q 2>>~/$LOGFILE
+        else
+          if [ "$nb2" -gt 200 ];then
+                  while [ "$nb2" -gt 200 ];do
+                          head -n 200 $TMP.${PROG}.3 > $TMP.${PROG}.6 2>>~/$LOGFILE
+                          echo "`cat $TMP.${PROG}.6`" | awk '{ OFS = "," ; ORS = ","; $1 = $1; print $0 }' > $TMP.${PROG}.7	 2>>~/$LOGFILE
+                          r.patch -z input=`cat $TMP.${PROG}.7` output="$SBV"_sbwholetmp_p_"$cc" --q 2>>~/$LOGFILE
+                          echo ""$SBV"_sbwholetmp_p_"$cc"" >> $TMP.${PROG}.9 2>>~/$LOGFILE
+                          m.splicepl 201-$nb2 $TMP.${PROG}.3 > $TMP.${PROG}.8 2>>~/$LOGFILE
+                          rm -f $TMP.${PROG}.3
+                          mv $TMP.${PROG}.8 $TMP.${PROG}.3 2>>~/$LOGFILE
+                          wc -l $TMP.${PROG}.3 |cut -d" " -f1 > $TMP.${PROG}.5 2>>~/$LOGFILE
+                          nb2=`cat $TMP.${PROG}.5`
+			   if [ "$nb2" -lt 200 ];then
+			    cc=$cc+1
+			    echo "`cat $TMP.${PROG}.3`" | awk '{ OFS = "," ; ORS = ","; $1 = $1; print $0 }' > $TMP.${PROG}.7	 2>>~/$LOGFILE
+			    r.patch -z input=`cat $TMP.${PROG}.7` output="$SBV"_sbwholetmp_p_"$cc" --q 2>>~/$LOGFILE
+			    echo ""$SBV"_sbwholetmp_p_"$cc"" >> $TMP.${PROG}.9 2>>~/$LOGFILE
+			  fi
+			  
+                          rm -f $TMP.${PROG}.6
+                          rm -f $TMP.${PROG}.7
+                          cc=$cc+1
+						  if [ ! -z "`cat ~/$LOGFILE`" ];then
+							g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+							cleanup
+							exit 2
+						  fi
+                  done
+  
+          
+                  echo "`cat $TMP.${PROG}.9`" | awk '{ OFS = "," ; ORS = ","; $1 = $1; print $0 }' > $TMP.${PROG}.10 2>>~/$LOGFILE	
+                  r.patch -z input=`cat $TMP.${PROG}.10` output="$SBV"_sbwholetmp_p_tt --q 2>>~/$LOGFILE
+		   
+                  g.remove rast=`cat $TMP.${PROG}.10` --q 2>>~/$LOGFILE
+                  rm -f $TMP.${PROG}.9 $TMP.${PROG}.10
+  
+          else
+                  r.patch -z input=`cat $TMP.${PROG}.4` output="$SBV"_sbwholetmp_p_tt --q 2>>~/$LOGFILE
+  
+          fi
+	fi
+
+	g.remove rast=`cat $TMP.${PROG}.4` --q 2>>~/$LOGFILE
+	g.remove rast="$SBV"_sbwholetmp_p_t --q 2>>~/$LOGFILE
+	
+	g.rename rast="$SBV"_sbwholetmp_p_tt,"$SBV"_sbwholetmp_p_t --q 2>>~/$LOGFILE
+	if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+	fi
+	rm -f $TMP.${PROG}.5
+        rm -f $TMP.${PROG}.3 $TMP.${PROG}.4 $TMP.${PROG}.6 $TMP.${PROG}.7 $TMP.${PROG}.8
+	rm -f $TMP.${PROG}.11 $TMP.${PROG}.13 $TMP.${PROG}.14 $TMP.${PROG}.15
+	
+	
+	#testing the Nodata presence (cat = 0);
+	r.stats --q -p -n input="$SBV"_sbwholetmp_p_t fs="|" |grep "^0"|tail -n 1 |cut -d"|" -f2 |sed 's/%//g' |sed 's/ //g'> $TMP.${PROG}.11 2>>~/$LOGFILE
+    if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+	fi    
+
+
+	echo "val `cat $TMP.${PROG}.11`" > $TMP.${PROG}.13 2>>~/$LOGFILE
+	echo "percent $PERCENT" > $TMP.${PROG}.14 2>>~/$LOGFILE
+	m.compaltipl --input1=$TMP.${PROG}.14 --input2=$TMP.${PROG}.13 --output=$TMP.${PROG}.15 2>>~/$LOGFILE
+	echo "*** reference percent = $PERCENT ; actual percent = `cat $TMP.${PROG}.11` ***"
+        
+        #security if >=  100/ of null value
+        ACTUALV=`cat $TMP.${PROG}.11`
+        m.compfloatpl --val1=$ACTUALV --sign="<=" --val2=100 > $TMP.${PROG}.12 2>>~/$LOGFILE
+        if [ ! -s "$TMP.${PROG}.12" ];then
+          cleanup
+          echo "error" > $ERROR
+          exit 2
+        fi
+
+  
+  if [ "$nbwhole" = "30" ];then
+    echo "error" > $ERROR
+    break
+  fi
+  nbwhole=$nbwhole+1
+  if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+  fi
+done
+
+cleanup
+exit 0
+
+

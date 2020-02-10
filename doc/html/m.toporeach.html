@@ -1,0 +1,190 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>GRASS GIS: m.toporeach</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<link rel="stylesheet" href="grassdocs.css" type="text/css">
+</head>
+<body bgcolor="white">
+
+<img src="grass_logo.png" alt="GRASS logo"><hr align=center size=6 noshade>
+
+<h2>NAME</h2>
+<em><b>m.toporeach</b></em>  - Topology calculation for reach segments 
+<h2>KEYWORDS</h2>
+vector, topology, linear units, MHYDAS
+<h2>SYNOPSIS</h2>
+<b>m.toporeach</b><br>
+<b>m.toporeach help</b><br>
+<b>m.toporeach</b> [-<b>c</b>] <b>input</b>=<em>name</em> <b>output</b>=<em>name</em>  [<b>gu</b>=<em>name</em>]   <b>ID</b>=<em>string</em>  [<b>IDGU</b>=<em>string</em>]   [<b>colwidth</b>=<em>string</em>]   [<b>colheight</b>=<em>string</em>]  <b>dem</b>=<em>name</em>  [<b>outlet</b>=<em>float</em>]  [<b>slop_val</b>=<em>float</em>]   [<b>ID_OUT</b>=<em>string</em>]   [<b>UPST_OUT</b>=<em>string</em>]   [<b>DNST_OUT</b>=<em>string</em>]   [<b>LOW_OUT</b>=<em>string</em>]   [<b>LEN_OUT</b>=<em>string</em>]   [<b>WID_OUT</b>=<em>string</em>]   [<b>HEIG_OUT</b>=<em>string</em>]   [<b>SLOPE_OUT</b>=<em>string</em>]   [<b>PCSSORD_OUT</b>=<em>string</em>]   [<b>COMMENT_OUT</b>=<em>string</em>]   [<b>GUID</b>=<em>string</em>]   [--<b>overwrite</b>]  [--<b>verbose</b>]  [--<b>quiet</b>] 
+
+<h3>Flags:</h3>
+<DL>
+<DT><b>-c</b></DT>
+<DD>use the option <em>outlet</em> to find the outlet segment (must use the column 'outlet'); otherwise DEM is used</DD>
+
+
+<DT><b>--overwrite</b></DT>
+<DD>Allow output files to overwrite existing files</DD>
+<DT><b>--verbose</b></DT>
+<DD>Verbose module output</DD>
+<DT><b>--quiet</b></DT>
+<DD>Quiet module output</DD>
+</DL>
+
+<h3>Parameters:</h3>
+<DL>
+<DT><b>input</b>=<em>name</em></DT>
+<DD>Input line vector name</DD>
+
+<DT><b>output</b>=<em>name</em></DT>
+<DD>Output line vector name</DD>
+
+<DT><b>gu</b>=<em>name</em></DT>
+<DD>Input ground water vector name</DD>
+
+<DT><b>ID</b>=<em>string</em></DT>
+<DD>ID reach column name</DD>
+
+<DT><b>IDGU</b>=<em>string</em></DT>
+<DD>ID Ground Water column name</DD>
+
+<DT><b>colwidth</b>=<em>string</em></DT>
+<DD>Width reach column name</DD>
+
+<DT><b>colheight</b>=<em>string</em></DT>
+<DD>Height reach column name</DD>
+
+<DT><b>dem</b>=<em>name</em></DT>
+<DD>Input DEM</DD>
+
+<DT><b>outlet</b>=<em>float</em></DT>
+<DD> ID value of the outlet segment</DD>
+
+<DT><b>slop_val</b>=<em>float</em></DT>
+<DD> Replacement value for null or negative calculated slope (must be > 0; default value is 0.0001)</DD>
+
+<DT><b>ID_OUT</b>=<em>string</em></DT>
+<DD>id OUTPUT column name</DD>
+<dd>Default: <em>SELF_ID</em></dd>
+
+<DT><b>UPST_OUT</b>=<em>string</em></DT>
+<DD>UP Node OUTPUT column name</DD>
+<dd>Default: <em>UPST_NOD</em></dd>
+
+<DT><b>DNST_OUT</b>=<em>string</em></DT>
+<DD>DOWN Node OUTPUT column name</DD>
+<dd>Default: <em>DNST_NOD</em></dd>
+
+<DT><b>LOW_OUT</b>=<em>string</em></DT>
+<DD>Low RS id OUTPUT column name</DD>
+<dd>Default: <em>LORCH_ID</em></dd>
+
+<DT><b>LEN_OUT</b>=<em>string</em></DT>
+<DD>Length OUTPUT column name</DD>
+<dd>Default: <em>USR_LEN</em></dd>
+
+<DT><b>WID_OUT</b>=<em>string</em></DT>
+<DD>Width OUTPUT column name</DD>
+<dd>Default: <em>USR_WID</em></dd>
+
+<DT><b>HEIG_OUT</b>=<em>string</em></DT>
+<DD>Height OUTPUT column name</DD>
+<dd>Default: <em>USR_HEIG</em></dd>
+
+<DT><b>SLOPE_OUT</b>=<em>string</em></DT>
+<DD>Slope OUTPUT column name</DD>
+<dd>Default: <em>USR_SLOP</em></dd>
+
+<DT><b>PCSSORD_OUT</b>=<em>string</em></DT>
+<DD>Process Order OUTPUT column name</DD>
+<dd>Default: <em>PCSS_ORD</em></dd>
+
+<DT><b>COMMENT_OUT</b>=<em>string</em></DT>
+<DD>Commentary OUTPUT column name</DD>
+<dd>Default: <em>COMMENT</em></dd>
+
+<DT><b>GUID_OUT</b>=<em>string</em></DT>
+<DD>ID GU OUTPUT column name</DD>
+<dd>Default: <em>EXHGW_ID</em></dd>
+
+</DL>
+
+<h2>DESCRIPTION</h2>
+<em>m.toporeach</em> allows the user to calculate oriented topology of linear units (RS MHYDAS). Linear network can be optionally created by the <em><a href="m.seg.html">m.seg</a></em> and <em><a href="m.extractlineseg.html">m.extractlineseg</a></em> scripts. 
+
+<h2>NOTES</h2>
+<h4>Input and output layers </h4>
+The input layer can be created by <em><a href="m.extractlineseg.html">m.extractlineseg</a></em>, but <em>m.toporeach</em> script can also accept simple line layer (just be sure that in that case layer geometry and topology are correct; use <em><a href="m.network.html">m.network</a></em> script to verify). The output layer will contain the following columns (columns are created during this process):
+<dd>- <em>$ID_OUT</em> : unique Object ID </dd> 
+<dd>- <em>$UPST_OUT</em> : UpNode ID</dd> 
+<dd>- <em>$DNST_OUT</em> : DownNode ID (m/m)</dd> 
+<dd>- <em>$LOW_OUT</em> : Down Hydro Object ID </dd> 
+<dd>- <em>$LEN_OUT</em> : Length (m)  </dd> 
+<dd>- <em>$WID_OUT</em> : Width (m)</dd> 
+<dd>- <em>$HEIG_OUT</em> : Height (m)</dd> 
+<dd>- <em>SLOPE_OUT</em> : Slope (m/m)</dd> 
+<dd>- <em>$PCSSORD_OUT</em> : Object Process Order  </dd> 
+<dd>- <em>$GUID_OUT</em> : ID unit for underground exchanges  </dd> 
+<dd>- <em>$COMMENT_OUT</em> : Commentary </dd> 
+<br><br>
+
+
+The segment outlet can be provided by user with flag <em>-c</em> and option <em>outlet</em> or automatically by DEM (algorithm will find the dangle segment which have the node with the lowest elevation).
+Topology with GroundWater units can be processed with <em>GU</em> and <em>IDGU</em> options.
+If input layer have width and height segment information, they can be provided using <em>colwidth</em> and <em>colheight</em> options; these attributes will be transfered on the output layer.<br>
+If the user wants to have xml files or fluidx files for the OpenFluid version 1.5 or superior, please use <em><a href="m.definput.html">m.definput</a></em> script to create these files.<br>
+Calculated slopes are always positive (no negative or null value); for negative or null slopes, user can manage its own value by <em>slop_val</em> option (default value is 0.0001).
+
+<h2>EXAMPLES</h2>
+<h3>Oriented topology calculation for seg_reachs</h3>
+Outlet segment provided by Raster DEM elevation. Width and height of the reachs are provided too.
+
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.toporeach input=seg_reachs output=seg_reachs2 ID=SELF_ID dem=elevation colwidth=width colheight=height
+
+
+</pre></div>
+
+<p>
+</p><ul>
+<table><tbody><tr><td>
+<img src="m.toporeach.png" border="0">
+</td></tr>
+<tr><td align="center">
+<font size="-1"><em>Oriented topology with Process Order labels</em></font>
+</td></tr>
+</tbody></table>
+</ul>
+
+
+
+
+
+
+<h3>Oriented topology calculation with user's outlet provided</h3>
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.toporeach -c input=seg_reachs output=seg_reachs2 ID=SELF_ID dem=elevation outlet=18</pre></div>
+
+<h3>Oriented topology calculation with Ground Water units provided</h3>
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.toporeach -c input=seg_reachs output=seg_reachs2 ID=SELF_ID dem=elevation outlet=18 GU=GroundW IDGU=Ident</pre></div>
+
+
+
+
+<h2>SEE ALSO</h2>
+<a href="m.seg.html">m.seg</a>, <a href="m.extractlineseg.html">m.extractlineseg</a>, <a href="m.toposu.html">m.toposu</a>, <a href="m.definput.html">m.definput</a>, <a href="m.network.html">m.network</a>
+
+<h2>AUTHORS</h2>
+Michael Rabotin, UMR LISAH, Montpellier, France
+<p>rabotin@supagro.inra.fr
+
+</p><p><em> Last Changed: </em> 23 January 2012
+</p></dl>
+
+<p></p><hr>
+<P><a href="index.html">Main index</a> 
+<p>Copyright <a href="http://www.umr-lisah.fr/openfluid/index.php?page=welc&amp;lang=fr">UMR LISAH OpenFluid</a></p>
+
+
+
+</body>
+</html>

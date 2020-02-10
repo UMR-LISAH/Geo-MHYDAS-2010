@@ -1,0 +1,66 @@
+#!/usr/bin/perl -w
+############################################################################
+#
+# MODULE:       m.compfloatpl
+# AUTHOR(S):    Michael Rabotin (rabotin@supagro.inra.fr)
+# PURPOSE:      Float comparison
+# REQUIREMENTS: 
+#
+# COPYRIGHT:    (C) 2009 UMR LISAH - OpenFluid
+#
+#               This program is free software under the GNU General Public
+#               License (>=v2). Read the file COPYING that comes with GRASS
+#               for details.
+#
+#############################################################################
+
+
+use strict;
+use Getopt::Long;
+
+my ($val1, $sign, $val2);
+
+GetOptions("val1=f", \$val1, "sign=s", \$sign, "val2=i", \$val2);
+
+
+
+chomp $val1;
+chomp $sign;
+chomp $val2;
+
+if ($sign eq "!="){
+	if ($val1 != $val2){
+		print "ok\n";
+	}	
+}
+
+if ($sign eq ">"){
+	if ($val1 > $val2){
+		print "ok\n";
+	}	
+}
+
+if ($sign eq "<"){
+	if ($val1 < $val2){
+		print "ok\n";
+	}	
+}
+
+if ($sign eq ">="){
+	if ($val1 >= $val2){
+		print "ok\n";
+	}	
+}
+
+if ($sign eq "<="){
+	if ($val1 <= $val2){
+		print "ok\n";
+	}	
+}
+
+if ($sign eq "=="){
+	if ($val1 == $val2){
+		print "ok\n";
+	}	
+}
+

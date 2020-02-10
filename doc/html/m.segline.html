@@ -1,0 +1,93 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html><head>
+
+
+
+<title>GRASS GIS: m.segline</title>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<link rel="stylesheet" href="grassdocs.css" type="text/css">
+</head><body bgcolor="white">
+
+<img src="grass_logo.png" alt="GRASS logo"><hr size="6" align="center" noshade="noshade">
+
+<h2>NAME</h2>
+<em><b>m.segline</b></em>  - splitting linear entities by points
+<h2>KEYWORDS</h2>
+vector, line, split
+
+<h2>SYNOPSIS</h2>
+<b>m.segline</b><br>
+<b>m.segline help</b><br>
+<b>m.segline</b> <b>input</b>=<em>name</em> <b>output</b>=<em>name</em>  [<b>point</b>=<em>name</em>]   [<b>file</b>=<em>string</em>]  <b>snap</b>=<em>float</em>  [--<b>overwrite</b>]  [--<b>verbose</b>]  [--<b>quiet</b>] 
+
+<h3>Flags:</h3>
+<dl>
+<dt><b>--overwrite</b></dt>
+<dd>Allow output files to overwrite existing files</dd>
+<dt><b>--verbose</b></dt>
+<dd>Verbose module output</dd>
+<dt><b>--quiet</b></dt>
+<dd>Quiet module output</dd>
+</dl>
+
+<h3>Parameters:</h3>
+<dl>
+<dt><b>input</b>=<em>name</em></dt>
+<dd>Input vector name</dd>
+
+<dt><b>output</b>=<em>name</em></dt>
+<dd>Output vector name</dd>
+
+<dt><b>point</b>=<em>name</em></dt>
+<dd>Input point vector</dd>
+
+<dt><b>file</b>=<em>string</em></dt>
+<dd>Input ascii point file (without intitulate column, field separator is 'space', col1 x and col2 y)</dd>
+
+<dt><b>snap</b>=<em>float</em></dt>
+<dd>snap distance (in map units)</dd>
+
+</dl>
+
+
+<h2>DESCRIPTION</h2>
+<em>m.segline</em> script allows the user to split vector lines by points. Points can be submitted from a point vector map or an ascii file (See<em> Examples</em> for details).
+
+<h2>NOTES</h2>
+The <em>snap</em> value allows the user to snap (under this threshold) splitting points on the closest line.
+Note that after splitting, a row is inserted in the attribute table for each
+new segment created but only the <em>cat</em> column is updated. 
+
+<h2>EXAMPLES</h2>
+<h3> Splitting line vector by vector point</h3>
+With <em>snap</em> value at 2 map units
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.segline input=line1 output=line2 point=splitPT snap=2
+</pre></div> 
+
+<h3> Splitting line vector by ascii file</h3>
+With <em>snap</em> value at 2 map units
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; cat /tmp/splitFile
+673401 1830816
+GRASS 6.3.0 :~ &gt; m.segline input=line1 output=line2 file=/tmp/splitFile snap=2
+</pre></div> 
+
+
+<h2>SEE ALSO</h2>
+<a href="m.disline.html">m.disline</a>, <a href="m.network.html">m.network</a>
+
+
+<h2>AUTHORS</h2>
+Michael Rabotin, UMR LISAH, Montpellier, France
+<p>rabotin@supagro.inra.fr
+
+</p><p><em> Last Changed: </em> 21 July 2010
+</p>
+
+<p></p><hr>
+<P><a href="index.html">Main index</a> 
+<p>Copyright <a href="http://www.umr-lisah.fr/openfluid/index.php?page=welc&amp;lang=fr">UMR LISAH OpenFluid</a></p>
+
+
+
+
+</body></html>

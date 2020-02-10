@@ -1,0 +1,135 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html><head>
+
+
+
+
+
+
+<title>GRASS GIS: m.dispolyg</title>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<link rel="stylesheet" href="grassdocs.css" type="text/css">
+
+</head><body bgcolor="white"> 
+
+<img src="grass_logo.png" alt="GRASS logo"><hr size="6" align="center" noshade="noshade">
+
+<h2>NAME</h2>
+<em><b>m.dispolyg</b></em>  - dissolving small areal entities
+<h2>KEYWORDS</h2>
+vector, dissolve, areal
+<h2>SYNOPSIS</h2>
+<b>m.dispolyg</b><br>
+<b>m.dispolyg help</b><br>
+<b>m.dispolyg</b> [-<b>i</b>] <b>input</b>=<em>name</em> <b>output</b>=<em>name</em> <b>area</b>=<em>float</em>  [<b>unit</b>=<em>string</em>]   [<b>columnp</b>=<em>string</em>]   [<b>valuep</b>=<em>string</em>]   [--<b>overwrite</b>]  [--<b>verbose</b>]  [--<b>quiet</b>] 
+
+<h3>Flags:</h3>
+<dl>
+<dt><b>-i</b></dt>
+<dd>print only statistics (no calcul) and exit</dd>
+
+<dt><b>--overwrite</b></dt>
+<dd>Allow output files to overwrite existing files</dd>
+<dt><b>--verbose</b></dt>
+<dd>Verbose module output</dd>
+<dt><b>--quiet</b></dt>
+<dd>Quiet module output</dd>
+</dl>
+
+<h3>Parameters:</h3>
+<dl>
+<dt><b>input</b>=<em>name</em></dt>
+<dd>Input vector name</dd>
+
+<dt><b>output</b>=<em>name</em></dt>
+<dd>Output vector name</dd>
+
+<dt><b>area</b>=<em>float</em></dt>
+<dd>minimum area value</dd>
+
+<dt><b>unit</b>=<em>string</em></dt>
+<dd>units (meters (me), kilometers (k), acres (a), hectares (h))</dd>
+<dd>Options: <em>me,k,a,h</em></dd>
+<dd>Default: <em>me</em></dd>
+
+<dt><b>columnp</b>=<em>string</em></dt>
+<dd>Name of column used to treat particular entities (column must exist)</dd>
+
+<dt><b>valuep</b>=<em>string</em></dt>
+<dd>value used in 'columnp' to identify the particular entities</dd>
+
+<h2>DESCRIPTION</h2>
+<em>m.dispolyg</em> allows the user to dissolve small areal entities with user's threshold (<em>area</em> parameter). Flag i prints only statistics (see <em> Examples </em> for details). <em>Columnp</em> and <em>valuep</em> can be used to treat separately particular entities (e.g. road entities can be dissolved only with road entities), see <em> Examples </em> for details.
+
+<h2>NOTES</h2>
+Small areal entities are dissolved to the neighouring entity with whom they
+share the longest boundary.
+The dissolving process is iterative (process is stopped when no more small
+entity is found). Small areal entities under the threshold but with no
+neighbours are preserved.
+<h2>EXAMPLES</h2>
+
+<h3>Print statistics</h3>
+Print statistics for dissolving areal entities for the polygon1 vector map (threshold is 1200 square meters)
+
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.dispolyg -i input=polygon1 output=polygon2 area=1200 unit=me
+You choose a minimum area of 1200 m2
+ For the vector polygon1,
+ the dissolving small area entities operation will work
+ on 6 polygons for 28 total polygons
+ and will represent 4.3 % of the total surface
+</pre></div>
+
+<h3>Dissolving areal entities</h3>
+Dissolving areal entities for the polygon1 vector map (threshold is 1200 square meters)
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.dispolyg input=polygon1 output=polygon2 area=1200 unit=me
+</pre></div>
+
+<p>
+</p><ul>
+<table><tbody><tr><td>
+<img src="m_dispolyg_dissolve.png" border="1">
+</td></tr>
+<tr><td align="center">
+<font size="-1"><em>Input polygon1 layer (left) ; Output polygon2 layer (right)</em></font>
+</td></tr>
+</tbody></table>
+</ul>
+
+<h3>Particular entities treatment</h3>Dissolving small areal entities
+for the plot1 vector map (threshold is 100 square meters) and separate
+treatment for particular entities defined by the column <em>'type'</em> and the value <em>'road'</em>
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.dispolyg input=plot1 output=plot2 area=100 unit=me columnp=type valuep=road
+</pre></div>
+
+<p>
+</p><ul>
+<table><tbody><tr><td>
+<img src="m_dispolyg_protect.png" border="1">
+</td></tr>
+<tr><td align="center">
+<font size="-1"><em>Input plot1 layer (left) ; Output plot2 layer (right)</em></font>
+</td></tr>
+</tbody></table>
+</ul>
+
+
+
+<h2>SEE ALSO</h2>
+<a href="m.disline.html">m.disline</a>
+
+<h2>AUTHORS</h2>
+Michael Rabotin, UMR LISAH, Montpellier, France
+<p>rabotin@supagro.inra.fr
+
+</p><p><em> Last Changed: </em> 21 July 2010
+</p></dl>
+
+<p></p><hr>
+<P><a href="index.html">Main index</a> 
+<p>Copyright <a href="http://www.umr-lisah.fr/openfluid/index.php?page=welc&amp;lang=fr">UMR LISAH OpenFluid</a></p>
+
+
+
+
+</body></html>

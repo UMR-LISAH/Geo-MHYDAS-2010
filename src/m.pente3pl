@@ -1,0 +1,68 @@
+#!/usr/bin/perl -w
+############################################################################
+#
+# MODULE:       m.pente3pl
+# AUTHOR(S):    Michael Rabotin (rabotin@supagro.inra.fr)
+# PURPOSE:      Slope calcul for two points with xyz coordinates (distance = reach lenght AND NO euclidian distance)
+# REQUIREMENTS: 
+#
+# COPYRIGHT:    (C) 2009 UMR LISAH - OpenFluid
+#
+#               This program is free software under the GNU General Public
+#               License (>=v2). Read the file COPYING that comes with GRASS
+#               for details.
+#
+#############################################################################
+
+
+
+use strict;
+use Getopt::Long;
+
+my ($infile, $outfile, $slope);
+
+GetOptions("input=s", \$infile, "output=s", \$outfile, "slope=f", \$slope);
+
+if(!$infile or !$outfile or !$slope) {
+  print "Usage: $0 --input=[filename] --output=[filename] --slope=[value]\n";
+  exit 0;
+}
+
+open (FILE2,"$infile");
+open (FILE3, ">> $outfile");
+
+
+my @tab2=<FILE2>;
+close (FILE2);
+chomp @tab2;
+my($catA,$lcatA,$alongA,$altiA);
+my($catB,$lcatB,$alongB,$altiB);
+
+my $Ntab2 = scalar(@tab2);
+
+
+for(my $i=0;$i<$Ntab2;$i=$i+2){
+	my $j=$i+1;
+	($catA,$lcatA,$alongA,$altiA)=split / /,$tab2[$i];
+	($catB,$lcatB,$alongB,$altiB)=split / /,$tab2[$j];
+
+#slope calculation between point A and point B
+	if ($altiB != $altiA){
+		if ($altiA > $altiB){
+			my $pente=($altiA-$altiB)/$alongB;
+			print FILE3 "$lcatA|$pente\n";
+			
+		}
+		else {
+		#my $pente=($altiB-$altiA)/$alongB;
+		#print FILE3 "$lcatA|$pente\n";
+		print FILE3 "$lcatA|$slope\n";
+			
+		}
+	}
+	else {
+		print FILE3 "$lcatA|$slope\n";
+	}
+}
+
+close (FILE3);

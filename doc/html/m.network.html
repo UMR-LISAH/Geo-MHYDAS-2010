@@ -1,0 +1,130 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html><head>
+
+
+
+
+
+
+
+<title>GRASS GIS: m.network</title>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<link rel="stylesheet" href="grassdocs.css" type="text/css">
+</head><body bgcolor="white">
+
+<img src="grass_logo.png" alt="GRASS logo"><hr size="6" align="center" noshade="noshade">
+<H2>NAME</H2>
+<P><EM><B>m.network</B></EM> - hydrological network verification
+(rooted tree) 
+</P>
+<H2>KEYWORDS</H2>
+vector, network, rooted tree
+<H2>SYNOPSIS</H2>
+<P><B>m.network</B><BR><B>m.network help</B><BR><B>m.network</B> [-<B>c</B>]
+<B>input</B>=<EM>name</EM> <B>output</B>=<EM>name</EM> [--<B>overwrite</B>]
+[--<B>verbose</B>] [--<B>quiet</B>] 
+</P>
+<H3>Flags:</H3>
+<DL>
+	<DT><B>-c</B> 
+	</DT><DD>
+	clean vector geometry for confluence problem (default is no) 
+	</DD><DT>
+	<B>--overwrite</B> 
+	</DT><DD>
+	Allow output files to overwrite existing files 
+	</DD><DT>
+	<B>--verbose</B> 
+	</DT><DD>
+	Verbose module output 
+	</DD><DT>
+	<B>--quiet</B> 
+	</DT><DD STYLE="margin-bottom: 0.5cm">
+	Quiet module output 
+	</DD></DL>
+<H3>
+Parameters:</H3>
+<DL>
+	<DT><B>input</B>=<EM>name</EM> 
+	</DT><DD>
+	Input vector name 
+	</DD><DT>
+	<B>output</B>=<EM>name</EM> 
+	</DT><DD STYLE="margin-bottom: 0.5cm">
+	Output vector name 
+	</DD></DL>
+<H2>
+DESCRIPTION</H2>
+<P><EM>m.network</EM> allows the user to verify the geometry of the input
+line vector. As the MHYDAS model accepts only rooted tree structure for
+line vectors, <EM>m.network</EM> identifies possible confluence
+geometry problems, loop presence, duplicate segments and
+checks segment connection. See <EM>Examples </EM>for details. 
+</P>
+<H2>NOTES</H2>
+<P>Flag <EM>- c </EM>allows the user to clean the geometry vector and
+modifies the attribute table if confluence geometry problems are
+identified. Note that in the attribute table, a row is inserted for each
+new segment created (creation is made using <EM><a href="http://grass.osgeo.org/grass64/manuals/html64_user/v.clean.html">v.clean</a> tool=break</EM>
+command) but only the <EM>cat</EM> column is updated. See <EM>Examples
+</EM>for details. 
+</P>
+<H2>EXAMPLES</H2>
+<H3>Network verification</H3>
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.network input=line1 output=line2
+Writing attributes...
+
+--&gt; Everything seems ok !</pre></div>
+<H3>Geometry problems detected during verification</H3>
+<P>Loops detected during network verification : 
+</P>
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.network input=loop1 output=loop2
+WARNING: The network has 2 cycle(s)
+WARNING: Please check on the loop1 vector the followings category segments
+         to eliminate the cycles:
+15
+18
+19
+20
+21
+22
+23
+24</pre></div>
+Confluence problems detected during network verification : 
+</P>
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.network input=line3 output=line4
+
+WARNING: &lt;line3&gt; has geometry problems on confluence. Check it please</pre></div>
+Flag <EM>- c</EM> can be used to clean geometry for this problem : 
+</P>
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.network -c input=line3 output=line4
+Writing attributes...
+
+--&gt; Everything seems ok !</pre></div>
+Connection problems detected during network verification : 
+</P>
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.network input=disconnect1 output=disconnect2
+
+WARNING: The network isn't connected, please check it
+WARNING: Maybe check the following segments (category identifiant):
+3
+5
+6
+2</pre></div>
+SEE ALSO</H2>
+<P><A HREF="m.disline.html">m.disline</A>, <A HREF="m.segline.html">m.segline</A>
+</P>
+<H2>AUTHORS</H2>
+<P>Michael Rabotin, UMR LISAH, Montpellier, France 
+</P>
+<P>rabotin@supagro.inra.fr 
+</P>
+<P><EM>Last Changed: </EM>23 January 2012
+</P>
+<HR>
+<P><A HREF="index.html">Main index</A> 
+</P>
+<P>Copyright <A HREF="http://www.umr-lisah.fr/openfluid/index.php?page=welc&amp;lang=fr">UMR
+LISAH OpenFluid</A></P>
+</BODY>
+</HTML>

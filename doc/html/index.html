@@ -1,0 +1,85 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>General Manual - Geo-MHYDAS 12.01</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<link rel="stylesheet" href="grassdocs.css" type="text/css">
+</head>
+<body bgcolor="white">
+
+<img src="grass_logo.png" alt="GRASS logo"><hr align=center size=6 noshade>
+
+
+<h2><b>General Manual Geo-MHYDAS 12.01 </b></h2>
+These scripts are made for the Digital Landscape Representation (DLR) for <a href="http://www.umr-lisah.fr/openfluid/index.php?page=mhydas&lang=en">MHYDAS</a> model running with the <a href="http://www.umr-lisah.fr/openfluid/">OpenFLUID</a> platform 1.6.x or superior. <br>
+<a href="http://www.ubuntu-fr.org/">Ubuntu</a> linux operating system and GIS <a href="http://grass.osgeo.org/">GRASS</a> software version 6.3 or superior are needed. <br><br>
+The two following units can be produced: Surface Units (SU) and Reach Segments (RS). For more informations about these concepts, see <a href="http://www.umr-lisah.fr/openfluid/">OpenFLUID</a> website <br><br> 
+
+For more informations, please read: <br><br> 
+Lagacherie, P., Rabotin, M., Colin, F., Moussa, R. and Voltz, M., 2010. Geo-MHYDAS: A landscape discretization tool for distributed hydrological modeling of cultivated areas, Computers & Geosciences, 36, p.1021 - 1032. <a href="http://www.sciencedirect.com/science/article/pii/S0098300410001068">See more</a>  <br><br>
+
+
+
+The following input geographical layers can be provided for the segmentation procedures :
+<dd>- DEM raster (compulsory) (e.g. ArcInfo Raster, Ascii file ...)
+<dd>- land use vector layer (e.g. shapefiles ESRI, ArcInfo Coverage)
+<dd>- soil use vector layer (e.g. shapefiles ESRI, ArcInfo Coverage)
+<dd>- reach segments vector layer (e.g. shapefiles ESRI, ArcInfo Coverage)
+<dd>- subwatersheds vector layer (e.g. shapefiles ESRI, ArcInfo Coverage)
+<br><br>
+Importing these layers in GRASS GIS software can be done by <a href="http://grass.osgeo.org/grass64/manuals/html64_user/r.in.gdal.html">r.in.gdal</a> command for raster data and <a href="http://grass.osgeo.org/grass64/manuals/html64_user/v.in.ogr.html">v.in.ogr</a> command for vector layer.
+
+If you use these scripts for the whole Digital Landscape Representation procedures and want to create the two unit types (SU and RS), at the minima the <b>bold</b> scripts are compulsories, the others are optionals.
+<BR><BR><h3>Processsing geographical objects</h3>
+<table>
+<tr><td valign=top><a href="m.disline.html">m.disline</a></td> <td>Dissolving small linear entities.</td></tr>
+<tr><td valign=top><a href="m.dispolyg.html">m.dispolyg</a></td> <td>Dissolving small areal entities.</td></tr>
+<tr><td valign=top><a href="m.douglas.html">m.douglas</a></td> <td>Smoothing areal entities (Douglas Peucker algorithm).</td></tr>
+<tr><td valign=top><b><a href="m.network.html">m.network</a></b></td> <td>Hydrological network verification (rooted tree).</td></tr>
+<tr><td valign=top><a href="m.sbw.html">m.sbw</a></td> <td>Subwatershed calculation program with hydrological network influence.</td></tr>
+<tr><td valign=top><a href="m.segline.html">m.segline</a></td> <td>Splitting linear entities by points.</td></tr>
+<tr><td valign=top><a href="m.snaplp.html">m.snaplp</a></td> <td>Snapping linear entities on areal entities.</td></tr>
+</table>
+<BR><BR><h3>Creating hydrological units by selective overlays</h3>
+<table>
+<tr><td valign=top><a href="m.colseg.html">m.colseg</a></td> <td>Patch desired columns from the input polygon vector to the segmented output vector.</td></tr>
+<tr><td valign=top><a href="m.dispolygseg.html">m.dispolygseg</a></td> <td>Dissolving small areal entities (with hierarchical level) after segmentation.</td></tr>
+<tr><td valign=top><b><a href="m.extractlineseg.html">m.extractlineseg</b></a></td> <td>Linear units extraction after segmentation.</td></tr>
+<tr><td valign=top><b><a href="m.seg.html">m.seg</b></a></td> <td>Segmentation Procedure.</td></tr>
+<tr><td valign=top><a href="m.sliverpolygseg.html">m.sliverpolygseg</a></td> <td>Dissolving sliver entities with hierarchical level after segmentation (use Gravelius Index).</td></tr>
+
+
+</table>
+<BR><BR><h3>Building oriented topologies of hydrological units</h3>
+<table>
+<tr><td valign=top><b><a href="m.toporeach.html">m.toporeach</b></a></td> <td>Topology calculation for reach segments and generation of MHYDAS RSdefs.dat file.</td></tr>
+<tr><td valign=top><b><a href="m.toposu.html">m.toposu</b></a></td> <td>Topology calculation for surface units and generation of MHYDAS SUdefs.dat files.</td></tr>
+<tr><td valign=top><a href="m.definput.html">m.definput</a></td> <td>Creation xml input files for OpenFluid Engine 1.4.</td></tr>
+
+</table>
+
+
+
+
+
+
+
+
+
+
+
+<BR><BR>
+<h2>AUTHORS</h2>
+Michael Rabotin, UMR LISAH, Montpellier, France
+<p>rabotin@supagro.inra.fr
+
+</p><p><em> Last Changed: </em> 23 January 2012
+</p></dl>
+
+<p></p><hr>
+<p>Copyright <a href="http://www.umr-lisah.fr/openfluid/index.php?page=welc&amp;lang=fr">UMR LISAH OpenFluid</a></p>
+
+
+</body>
+</html>
+

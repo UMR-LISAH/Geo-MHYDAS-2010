@@ -1,0 +1,516 @@
+#!/bin/bash
+############################################################################
+#
+# MODULE:       m.definput
+# AUTHOR(S):    Michael Rabotin (rabotin@supagro.inra.fr)
+# PURPOSE:      Create fluidx/xml files for OpenFluid Engine 1.5 or superior
+# REQUIREMENTS: 
+# COPYRIGHT:    (C) 2009 UMR LISAH - OpenFluid
+#
+#               This program is free software under the GNU General Public
+#               License (>=v2). Read the file COPYING that comes with GRASS
+#               for details.
+#
+#############################################################################
+ 
+#%Module
+#%  description: Creation xml files or fluidx files for OpenFluid Engine 1.5 or superior
+#% keywords : vector, OpenFluid, fluidx, xml
+#%END
+#%flag
+#% key: s
+#% description: only show attribute columns of input and exit (no file creation)
+#%END
+#%flag
+#% key: x
+#% description: create xml extension instead of default fluidx extension format
+#%END
+#%option
+#% key: input
+#% type: string
+#% gisprompt: old,vector,vector
+#% description: Input vector name
+#% key_desc : name
+#% required : yes
+#%END
+#%option
+#% key: directory
+#% type: string
+#% description: Name directory for the file(s)
+#% required : yes
+#%END
+#%option
+#% key: type
+#% type: string
+#% description: Unit type (SU, RS or GU)
+#% options :SU,RS,GU
+#% required : yes
+#%END
+#%option
+#% key: idcol
+#% type: string
+#% description: Column name id unit (default is SELF_ID)
+#% required : no
+#%END
+#%option
+#% key: typedowncol
+#% type: string
+#% description: Column name for the TYPE downstream unit only if TYPE = SU (default is for SU TYPE : FLOW_CDE)
+#% required : no
+#%END
+#%option
+#% key: downcol
+#% type: string
+#% description: Column name for the id downstream unit (default is for SU TYPE : FLOW_ID, for RS TYPE : LORCH_ID and for GU TYPE : EXHGW_ID)
+#% required : no
+#%END
+#%option
+#% key: gucol
+#% type: string
+#% description: Column name for the Exchange GU connected to SU (default is EXHGW_ID)
+#% required : no
+#%END
+#%option
+#% key:pcsscol
+#% type: string
+#% description: Column name for the Process Order (default is PCSS_ORD)
+#% required : no
+#%END
+#%option
+#% key: column
+#% type: string
+#% description: Column names of attribut data for the XXdefs.ddata.fluidx/xml (column name separated by comma ',')
+#% multiple : yes
+#% required : no
+#%END
+#%option
+#% key: name
+#% type: string
+#% description: File name for XXddef.fluidx/xml and XXdefs.ddata.fluidx/xml (default is $TYPEddef.fluidx/xml and $TYPEdefs.ddata.fluidx/xml)
+#% required : no
+#%END
+  
+
+eval `g.gisenv`
+: ${GISDBASE?} ${LOCATION_NAME?} ${MAPSET?}
+
+if [ "$1" != "@ARGS_PARSED@" ] ; then
+  exec g.parser "$0" "$@"
+fi
+
+INPUT="$GIS_OPT_INPUT"
+DIRECTORY="$GIS_OPT_DIRECTORY"
+COLUMN="$GIS_OPT_COLUMN"
+TYPE="$GIS_OPT_TYPE"
+NAMEDEF="$GIS_OPT_NAME"
+DOWNCOL="$GIS_OPT_DOWNCOL"
+GUCOL="$GIS_OPT_GUCOL"
+PCSSCOL="$GIS_OPT_PCSSCOL"
+IDCOL="$GIS_OPT_IDCOL"
+TYPEDOWNCOL="$GIS_OPT_TYPEDOWNCOL"
+
+eval `g.gisenv`
+: ${GISDBASE?} ${LOCATION_NAME?} ${MAPSET?}
+if  [ -z "$GISBASE" ]
+then
+  echo ""
+  echo "You must start GRASS to launch this program"
+  echo ""
+  exit 2
+fi
+
+#GRASS version testing, must be >= 6.3
+
+Gversion1=`g.version |cut -d" " -f2 |cut -d"." -f1`
+Gversion2=`g.version |cut -d" " -f2 |cut -d"." -f2`
+
+if [ $Gversion1 -ge 6 ];then
+	if [ $Gversion1 = 6 ] && [ $Gversion2 -lt 3 ];then 
+		g.message -e message="You must have GRASS version 6.3.0 or higher"
+		exit 2
+	fi
+else
+	g.message -e message="You must have GRASS version 6.3.0 or higher"
+	exit 2
+
+fi
+
+# awk testing
+if [ ! -x "`which awk`" ];then
+  g.message -e message="awk required, please install awk our gawk first"
+  exit 2
+fi
+
+#perl testing
+if [ ! -x "`which perl`" ];then
+  g.message -e message="perl required, please install perl first"
+  exit 2
+fi
+
+#test driver (dbf only accepted)
+if [ "`db.connect -p|head -n 1 |cut -d":" -f2 `" != "dbf" ]
+then
+	g.message -e message="Sorry, but only dbf driver accepted "
+  exit 2
+fi 
+
+# setting environment, so that awk works properly in all languages
+unset LC_ALL
+LC_NUMERIC=C
+export LC_NUMERIC
+
+# all above OK - proceed: set up temporary files
+TMP="`g.tempfile pid=$$`"
+if [ $? -ne 0 ] || [ -z "$TMP" ] ; then
+    echo "ERROR: Unable to create temporary files." 1>&2
+    exit 2
+fi
+rm -f $TMP
+PROG=`basename $0 | sed 's/\./_/g'`
+NOW=$(date +"%F-%X")
+LOGFILE="$PROG-$NOW.log"
+#cleanup procedure
+cleanup()
+{
+  \rm -f $TMP
+    rm -f $TMP.${PROG}
+    rm -f $TMP.${PROG}.0
+   for ((u=1;u<=12;u+=1))
+  do
+    rm -f $TMP.${PROG}.$u
+  done
+   if [ -e ~/$LOGFILE ] && [ ! -s ~/$LOGFILE ] ;then
+		rm -f ~/$LOGFILE
+  fi
+
+  #g.mremove -f vect="$INPUT"_definput* --q
+}
+
+# what to do in case of user break: 
+exitprocedure()
+{
+  echo -e "\nUser break!"
+  cleanup
+  exit 2
+}
+# shell check for user break (signal list: trap -l)
+trap "exitprocedure" 2 3 15
+
+
+# test if INPUT vector map exists
+g.findfile element=vector mapset=${MAPSET?} file=${INPUT} > /dev/null
+if [ $? -ne 0 ] ; then
+  g.message -w  message="<$INPUT> not found"
+  cleanup
+   exit 2
+fi
+
+# type INPUT testing
+
+m.testtype input=$INPUT > $TMP.${PROG}.1
+if [ "$TYPE" = "SU" ] || [ "$TYPE" = "GU" ] ;then
+  #if input vector map is not a polygon vector, exit program
+  if [ "`cat $TMP.${PROG}.1`" != "polygone" ] ; then
+    g.message -e message="<$INPUT> isn't a vector polygon"
+    cleanup
+    exit 2
+  fi
+else
+#if input vector map is not a line vector, exit program
+  if [ "`cat $TMP.${PROG}.1`" != "line" ] ; then
+    g.message -e message="<$INPUT> isn't a vector line"
+    cleanup
+    exit 2
+  fi
+fi
+
+#test on DIRECTORY value
+if [ ! -e "$DIRECTORY" ]; then
+  g.message -e message="<$DIRECTORY> doesn't exist !! "
+  cleanup
+  exit 2
+fi
+
+#if COLUMN is not empty, testing the column(s) name(s)
+if [ ! -z "$COLUMN" ] ;then
+  echo "$COLUMN" |awk -F"," '{OFS="\n"; ORS="\n"; $1 = $1; print $0}'> $TMP.${PROG}.2
+  for a in `cat $TMP.${PROG}.2`;do
+    v.info -c map="$INPUT"|cut -d"|" -f2 |grep "^$a$" > $TMP.${PROG}.3
+    if [ ! -s "$TMP.${PROG}.3" ]; then
+      g.message -w message="Column <$a> not found"
+      cleanup
+      exit 2
+    fi
+  done
+fi
+
+#test on DOWNCOL value
+if [ ! -z "$DOWNCOL" ] ;then
+  v.info -c map="$INPUT"|cut -d"|" -f2 |grep "^$DOWNCOL$" > $TMP.${PROG}.4
+    if [ ! -s "$TMP.${PROG}.4" ]; then
+      g.message -w message="Column <$DOWNCOL> not found"
+      cleanup
+      exit 2
+    fi
+else
+  if [ "$TYPE" = "SU" ];then
+    DOWNCOL=FLOW_ID
+  fi
+  if [ "$TYPE" = "GU" ];then
+    DOWNCOL=EXHGW_ID
+  fi
+  if [ "$TYPE" = "RS" ];then
+    DOWNCOL=LORCH_ID
+  fi
+fi
+
+#test on TYPEDOWNCOL value
+if [ "$TYPE" = "SU" ];then
+  if [ ! -z "$TYPEDOWNCOL" ] ;then
+    v.info -c map="$INPUT"|cut -d"|" -f2 |grep "^$TYPEDOWNCOL$" > $TMP.${PROG}.8
+    if [ ! -s "$TMP.${PROG}.8" ]; then
+      g.message -w message="Column <$TYPEDOWNCOL> not found"
+      cleanup
+      exit 2
+    fi
+  else
+  TYPEDOWNCOL=FLOW_CDE
+  fi
+fi
+
+
+#test on IDCOL value
+if [ ! -z "$IDCOL" ] ;then
+  v.info -c map="$INPUT"|cut -d"|" -f2 |grep "^$IDCOL$" > $TMP.${PROG}.7
+    if [ ! -s "$TMP.${PROG}.7" ]; then
+      g.message -w message="Column <$IDCOL> not found"
+      cleanup
+      exit 2
+    fi
+else
+  IDCOL=SELF_ID
+fi
+
+#test on GUCOL value
+if [ ! -z "$GUCOL" ] ;then
+  v.info -c map="$INPUT"|cut -d"|" -f2 |grep "^$GUCOL$" > $TMP.${PROG}.5
+    if [ ! -s "$TMP.${PROG}.5" ]; then
+      g.message -w message="Column <$GUCOL> not found"
+      cleanup
+      exit 2
+    fi
+else
+  GUCOL=EXHGW_ID
+fi
+
+#test on PCSSCOL value
+if [ ! -z "$PCSSCOL" ] ;then
+  v.info -c map="$INPUT"|cut -d"|" -f2 |grep "^$PCSSCOL$" > $TMP.${PROG}.6
+    if [ ! -s "$TMP.${PROG}.6" ]; then
+      g.message -w message="Column <$PCSSCOL> not found"
+      cleanup
+      exit 2
+    fi
+else
+  PCSSCOL=PCSS_ORD
+fi
+
+if [ $GIS_FLAG_X -eq 1 ];then
+EXTENSION=xml
+else
+EXTENSION=fluidx
+fi
+
+# securities end
+
+#if flag S, list of the input columns
+if [ $GIS_FLAG_S -eq 1 ];then
+	echo ""
+	v.info -c map=$INPUT  2>>~/$LOGFILE
+	if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+	echo ""
+	echo "exit"
+	##cleanup procedure
+	cleanup
+	exit 0
+fi
+
+#if NAMEDEF is empty, NAMEDEF is replaced by TYPE
+if [ -z "$NAMEDEF" ] ;then
+    NAMEDEF=$TYPE
+fi
+echo "<?xml version=\"1.0\" standalone=\"yes\"?>" > "$DIRECTORY"/"$NAMEDEF".ddef.$EXTENSION 2>>~/$LOGFILE
+echo "<openfluid>" >> "$DIRECTORY"/"$NAMEDEF".ddef.$EXTENSION 2>>~/$LOGFILE
+echo "  <domain>" >> "$DIRECTORY"/"$NAMEDEF".ddef.$EXTENSION 2>>~/$LOGFILE
+echo "    <definition>" >> "$DIRECTORY"/"$NAMEDEF".ddef.$EXTENSION 2>>~/$LOGFILE
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+
+#if TYPE = SU
+if [ "$TYPE" = "SU" ];then
+ 
+  v.info -c map="$INPUT"|cut -d"|" -f2 |grep "^$GUCOL$" > $TMP.${PROG}.9 2>>~/$LOGFILE
+  if [ ! -s "$TMP.${PROG}.9" ]; then
+    v.db.select -c map=$INPUT column=$IDCOL,$PCSSCOL,$TYPEDOWNCOL,$DOWNCOL fs="|" nv=0 |sort -t"|" -k1g > $TMP.${PROG}.10 2>>~/$LOGFILE
+    for b in `cat $TMP.${PROG}.10`;do
+			echo "$b" > $TMP.${PROG}.11 2>>~/$LOGFILE
+      ID=`cut -d"|" -f1 $TMP.${PROG}.11`
+      Process=`cut -d"|" -f2 $TMP.${PROG}.11`
+      Type=`cut -d"|" -f3 $TMP.${PROG}.11`
+      DOWNID=`cut -d"|" -f4 $TMP.${PROG}.11`
+      echo "     <unit class=\"SU\" ID=\"$ID\" pcsorder=\"$Process\">" >> "$DIRECTORY"/"$NAMEDEF".ddef.$EXTENSION 2>>~/$LOGFILE
+      if [ "$Type" = "R" ] || [ "$Type" = "RL" ];then
+	echo "      <to class=\"RS\" ID=\"$DOWNID\" />" >> "$DIRECTORY"/"$NAMEDEF".ddef.$EXTENSION 2>>~/$LOGFILE
+      else
+	echo "      <to class=\"SU\" ID=\"$DOWNID\" />" >> "$DIRECTORY"/"$NAMEDEF".ddef.$EXTENSION 2>>~/$LOGFILE
+      fi
+      echo "     </unit>" >> "$DIRECTORY"/"$NAMEDEF".ddef.$EXTENSION 2>>~/$LOGFILE
+			rm -f $TMP.${PROG}.11
+    done
+	if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+	fi	
+  else
+    v.db.select -c map=$INPUT column=$IDCOL,$PCSSCOL,$TYPEDOWNCOL,$DOWNCOL,$GUCOL fs="|" nv=0 |sort -t"|" -k1g > $TMP.${PROG}.10 2>>~/$LOGFILE
+    for b in `cat $TMP.${PROG}.10`;do
+			echo "$b" > $TMP.${PROG}.11 2>>~/$LOGFILE
+      ID=`cut -d"|" -f1 $TMP.${PROG}.11`
+      Process=`cut -d"|" -f2 $TMP.${PROG}.11`
+      Type=`cut -d"|" -f3 $TMP.${PROG}.11`
+      DOWNID=`cut -d"|" -f4 $TMP.${PROG}.11`
+      GUID=`cut -d"|" -f5 $TMP.${PROG}.11`
+      echo "     <unit class=\"SU\" ID=\"$ID\" pcsorder=\"$Process\">" >> "$DIRECTORY"/"$NAMEDEF".ddef.$EXTENSION 2>>~/$LOGFILE
+      if [ "$Type" = "R" ]||[ "$Type" = "RL" ];then
+	echo "      <to class=\"RS\" ID=\"$DOWNID\" />" >> "$DIRECTORY"/"$NAMEDEF".ddef.$EXTENSION 2>>~/$LOGFILE
+      else
+	echo "      <to class=\"SU\" ID=\"$DOWNID\" />" >> "$DIRECTORY"/"$NAMEDEF".ddef.$EXTENSION 2>>~/$LOGFILE
+      fi
+      echo "      <to class=\"GU\" ID=\"$GUID\" />" >> "$DIRECTORY"/"$NAMEDEF".ddef.$EXTENSION 2>>~/$LOGFILE
+      echo "     </unit>" >> "$DIRECTORY"/"$NAMEDEF".ddef.$EXTENSION 2>>~/$LOGFILE
+			rm -f $TMP.${PROG}.11
+    done
+   fi
+	if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+	fi   
+fi
+
+#if TYPE = RS
+if [ "$TYPE" = "RS" ];then
+ 
+	v.info -c map="$INPUT"|cut -d"|" -f2 |grep "^$GUCOL$" > $TMP.${PROG}.9 2>>~/$LOGFILE
+  if [ ! -s "$TMP.${PROG}.9" ]; then
+    v.db.select -c map=$INPUT column=$IDCOL,$PCSSCOL,$DOWNCOL fs="|" nv=0 |sort -t"|" -k1g > $TMP.${PROG}.10 2>>~/$LOGFILE
+    
+    
+    for b in `cat $TMP.${PROG}.10`;do
+			echo "$b" > $TMP.${PROG}.11 2>>~/$LOGFILE
+      ID=`cut -d"|" -f1 $TMP.${PROG}.11`
+      Process=`cut -d"|" -f2 $TMP.${PROG}.11`
+      DOWNID=`cut -d"|" -f3 $TMP.${PROG}.11`
+      echo "     <unit class=\"RS\" ID=\"$ID\" pcsorder=\"$Process\">" >> "$DIRECTORY"/"$NAMEDEF".ddef.$EXTENSION 2>>~/$LOGFILE
+      if [ "$DOWNID" != "-1" ];then
+     	echo "      <to class=\"RS\" ID=\"$DOWNID\" />" >> "$DIRECTORY"/"$NAMEDEF".ddef.$EXTENSION 2>>~/$LOGFILE
+      fi	
+      echo "     </unit>" >> "$DIRECTORY"/"$NAMEDEF".ddef.$EXTENSION 2>>~/$LOGFILE
+			rm -f $TMP.${PROG}.11
+    done
+	if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+	fi	
+  else
+    v.db.select -c map=$INPUT column=$IDCOL,$PCSSCOL,$DOWNCOL,$GUCOL  fs="|" nv=0 |sort -t"|" -k1g > $TMP.${PROG}.10 2>>~/$LOGFILE
+    for b in `cat $TMP.${PROG}.10`;do
+			echo "$b" > $TMP.${PROG}.11 2>>~/$LOGFILE
+      ID=`cut -d"|" -f1 $TMP.${PROG}.11`
+      Process=`cut -d"|" -f2 $TMP.${PROG}.11`
+      DOWNID=`cut -d"|" -f3 $TMP.${PROG}.11`
+      GUID=`cut -d"|" -f4 $TMP.${PROG}.11`
+      echo "     <unit class=\"RS\" ID=\"$ID\" pcsorder=\"$Process\">" >> "$DIRECTORY"/"$NAMEDEF".ddef.$EXTENSION 2>>~/$LOGFILE
+      if [ "$DOWNID" != "-1" ];then
+		echo "      <to class=\"RS\" ID=\"$DOWNID\" />" >> "$DIRECTORY"/"$NAMEDEF".ddef.$EXTENSION 2>>~/$LOGFILE
+      fi
+      echo "      <to class=\"GU\" ID=\"$GUID\" />" >> "$DIRECTORY"/"$NAMEDEF".ddef.$EXTENSION 2>>~/$LOGFILE
+      echo "     </unit>" >> "$DIRECTORY"/"$NAMEDEF".ddef.$EXTENSION 2>>~/$LOGFILE
+			rm -f $TMP.${PROG}.11
+    done
+   fi
+	if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+	fi	
+fi
+
+#if TYPE = GU
+if [ "$TYPE" = "GU" ];then
+  v.db.select -c map=$INPUT column=$IDCOL,$PCSSCOL,$DOWNCOL fs="|" nv=0 |sort -t"|" -k1g > $TMP.${PROG}.10 2>>~/$LOGFILE
+	for b in `cat $TMP.${PROG}.10`;do
+		echo "$b" > $TMP.${PROG}.11 2>>~/$LOGFILE
+		ID=`cut -d"|" -f1 $TMP.${PROG}.11`
+		Process=`cut -d"|" -f2 $TMP.${PROG}.11`
+		DOWNID=`cut -d"|" -f3 $TMP.${PROG}.11`
+		echo "     <unit class=\"GU\" ID=\"$ID\" pcsorder=\"$Process\">" >> "$DIRECTORY"/"$NAMEDEF".ddef.$EXTENSION 2>>~/$LOGFILE
+		if [ "$DOWNID" != "-1" ];then
+		echo "      <to class=\"GU\" ID=\"$DOWNID\" />" >> "$DIRECTORY"/"$NAMEDEF".ddef.$EXTENSION 2>>~/$LOGFILE
+		fi
+		echo "     </unit>" >> "$DIRECTORY"/"$NAMEDEF".ddef.$EXTENSION 2>>~/$LOGFILE
+		rm -f $TMP.${PROG}.11
+	done
+fi
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+echo "    </definition>" >> "$DIRECTORY"/"$NAMEDEF".ddef.$EXTENSION 2>>~/$LOGFILE
+echo "   </domain>" >> "$DIRECTORY"/"$NAMEDEF".ddef.$EXTENSION 2>>~/$LOGFILE
+echo "</openfluid>" >> "$DIRECTORY"/"$NAMEDEF".ddef.$EXTENSION 2>>~/$LOGFILE
+
+#creation of XXdefs.ddata.$EXTENSION, if COLUMN is not empty
+if [ ! -z "$COLUMN" ] ;then
+	echo "<?xml version=\"1.0\" standalone=\"yes\"?>" >"$DIRECTORY"/"$NAMEDEF".defs.ddata.$EXTENSION 2>>~/$LOGFILE
+	echo "<openfluid>" >>"$DIRECTORY"/"$NAMEDEF".defs.ddata.$EXTENSION 2>>~/$LOGFILE
+	echo " <domain>" >>"$DIRECTORY"/"$NAMEDEF".defs.ddata.$EXTENSION 2>>~/$LOGFILE
+	
+	echo "$COLUMN" |awk -F"," '{OFS=";"; ORS="\n"; $1 = $1; print $0}'> $TMP.${PROG}.12 2>>~/$LOGFILE
+	if [ "$TYPE" = "SU" ];then
+		echo "  <inputdata unitclass=\"SU\" colorder=\"`cat $TMP.${PROG}.12`\" >" >>"$DIRECTORY"/"$NAMEDEF".defs.ddata.$EXTENSION 2>>~/$LOGFILE
+	fi
+	if [ "$TYPE" = "RS" ];then
+		echo "  <inputdata unitclass=\"RS\" colorder=\"`cat $TMP.${PROG}.12`\" >" >>"$DIRECTORY"/"$NAMEDEF".defs.ddata.$EXTENSION 2>>~/$LOGFILE
+	fi
+	if [ "$TYPE" = "GU" ];then
+		echo "  <inputdata unitclass=\"GU\" colorder=\"`cat $TMP.${PROG}.12`\" >" >>"$DIRECTORY"/"$NAMEDEF".defs.ddata.$EXTENSION 2>>~/$LOGFILE
+	fi
+	
+	
+	
+	v.db.select -c map=$INPUT column=$IDCOL,$COLUMN fs=" " nv=0 |sort -k1g >>"$DIRECTORY"/"$NAMEDEF".defs.ddata.$EXTENSION 2>>~/$LOGFILE
+	
+	echo "  </inputdata>" >>"$DIRECTORY"/"$NAMEDEF".defs.ddata.$EXTENSION 2>>~/$LOGFILE
+	
+	echo " </domain>  " >>"$DIRECTORY"/"$NAMEDEF".defs.ddata.$EXTENSION 2>>~/$LOGFILE
+	echo "</openfluid>" >>"$DIRECTORY"/"$NAMEDEF".defs.ddata.$EXTENSION 2>>~/$LOGFILE
+fi
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+##cleanup procedure
+cleanup
+exit 0

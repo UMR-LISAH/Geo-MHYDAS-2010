@@ -1,0 +1,90 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html><head>
+
+
+<title>GRASS GIS: m.douglas</title>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<link rel="stylesheet" href="grassdocs.css" type="text/css">
+</head><body bgcolor="white">
+
+<img src="grass_logo.png" alt="GRASS logo"><hr size="6" align="center" noshade="noshade">
+
+<h2>NAME</h2>
+<em><b>m.douglas</b></em>  - smoothing areal entities (Douglas Peucker algorithm)
+<h2>KEYWORDS</h2>
+vector, generalization, node, Douglas-Peucker
+
+<h2>SYNOPSIS</h2>
+<b>m.douglas</b><br>
+<b>m.douglas help</b><br>
+<b>m.douglas</b> <b>input</b>=<em>name</em> <b>output</b>=<em>name</em> <b>dist</b>=<em>float</em>  [--<b>overwrite</b>]  [--<b>verbose</b>]  [--<b>quiet</b>] 
+
+<h3>Flags:</h3>
+<dl>
+<dt><b>--overwrite</b></dt>
+<dd>Allow output files to overwrite existing files</dd>
+<dt><b>--verbose</b></dt>
+<dd>Verbose module output</dd>
+<dt><b>--quiet</b></dt>
+<dd>Quiet module output</dd>
+</dl>
+
+<h3>Parameters:</h3>
+<dl>
+<dt><b>input</b>=<em>name</em></dt>
+<dd>Input vector map</dd>
+
+<dt><b>output</b>=<em>name</em></dt>
+<dd>Output vector map</dd>
+
+<dt><b>dist</b>=<em>float</em></dt>
+<dd>Douglas Peucker distance threshold (in map units)</dd>
+
+</dl>
+
+<h2>DESCRIPTION</h2>
+<em>m.douglas</em> script allows the user to generalize areal boundaries; it is based on the well-known Douglas-Peucker algorithm (<em>See</em> Douglas &amp; Peucker, 1973).
+<h2>NOTES</h2>
+This script works only on lines with 90° angles (i.e. lines issued of
+vectorization of raster cells), all the other lines won't be modified.
+If the user wants to generalize all lines of a vector layer, <a href="http://grass.osgeo.org/grass64/manuals/html64_user/v.generalize.html">v.generalize</a> command should be used.
+<h2>EXAMPLES</h2>
+<h3> Areal boundaries generalized with a distance of 5 </h3>
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.douglas input=polygon1 output=polygon2 dist=5
+</pre></div>
+
+<p></p><p>
+</p><ul>
+<table><tbody><tr><td>
+<img src="m.douglas.png" border="1">
+</td></tr>
+<tr><td align="center">
+<font size="-1"><em>Input layer (left) ; Output layer (right)</em></font>
+</td></tr>
+</tbody></table>
+</ul>
+
+
+
+
+<h2>SEE ALSO</h2>
+<a href="http://grass.osgeo.org/grass64/manuals/html64_user/v.generalize.html">v.generalize</a>
+
+<h2>REFERENCES</h2>
+
+<p>David Douglas &amp; Thomas Peucker, "Algorithms for the reduction of
+the number of points required to represent a digitized line or its
+caricature", The Canadian Cartographer 10(2), 112-122 (1973)</p>
+
+<p></p><h2>AUTHORS</h2>
+Michael Rabotin, UMR LISAH, Montpellier, France
+<p>rabotin@supagro.inra.fr
+
+</p><p><em> Last Changed: </em> 23 January 2012
+</p>
+
+<p></p><hr>
+<P><a href="index.html">Main index</a> 
+<p>Copyright <a href="http://www.umr-lisah.fr/openfluid/index.php?page=welc&amp;lang=fr">UMR LISAH OpenFluid</a></p>
+
+</body></html>

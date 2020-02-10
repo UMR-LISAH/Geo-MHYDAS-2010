@@ -1,0 +1,111 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>GRASS GIS: m.dispolygseg</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<link rel="stylesheet" href="grassdocs.css" type="text/css">
+</head>
+<body bgcolor="white">
+
+<img src="grass_logo.png" alt="GRASS logo"><hr align=center size=6 noshade>
+
+<h2>NAME</h2>
+<em><b>m.dispolygseg</b></em>  - dissolving small areal entities (with hierarchical level) after segmentation
+<h2>KEYWORDS</h2>
+vector, selective dissolve, areal, hierarchical order
+<h2>SYNOPSIS</h2>
+<b>m.dispolygseg</b><br>
+<b>m.dispolygseg help</b><br>
+<b>m.dispolygseg</b> [-<b>i</b>] <b>input</b>=<em>name</em> <b>output</b>=<em>name</em> <b>area</b>=<em>float</em>  [<b>unit</b>=<em>string</em>]   [<b>columnp</b>=<em>string</em>]   [<b>valuep</b>=<em>string</em>]   [--<b>overwrite</b>]  [--<b>verbose</b>]  [--<b>quiet</b>] 
+
+<h3>Flags:</h3>
+<DL>
+<DT><b>-i</b></DT>
+<DD>print only statistics (no calcul) and exit</DD>
+
+<DT><b>--overwrite</b></DT>
+<DD>Allow output files to overwrite existing files</DD>
+<DT><b>--verbose</b></DT>
+<DD>Verbose module output</DD>
+<DT><b>--quiet</b></DT>
+<DD>Quiet module output</DD>
+</DL>
+
+<h3>Parameters:</h3>
+<DL>
+<DT><b>input</b>=<em>name</em></DT>
+<DD>Input vector name</DD>
+
+<DT><b>output</b>=<em>name</em></DT>
+<DD>Output vector name</DD>
+
+<DT><b>area</b>=<em>float</em></DT>
+<DD>min area value</DD>
+
+<DT><b>unit</b>=<em>string</em></DT>
+<DD>units (meters (me), kilometers (k), acres(a), hectares(h))</DD>
+<DD>Options: <em>me,k,a,h</em></DD>
+<DD>Default: <em>me</em></DD>
+
+<DT><b>columnp</b>=<em>string</em></DT>
+<DD>Name of column used to treat particular entities (column must exist)</DD>
+
+<DT><b>valuep</b>=<em>string</em></DT>
+<DD>value used in 'columnp' to identify the particular entities</DD>
+
+</DL>
+
+<h2>DESCRIPTION</h2>
+<em>m.dispolygseg</em> allows the user to dissolve small areal entities with user's threshold (<em>area</em> parameter) and with hierarchical order. The input layer must be created by <em><a href="m.seg.html">m.seg</a></em> script. Flag i prints only statistics (see <em> Examples </em> for details). <em>Columnp</em> and <em>valuep</em> can be used to treat separately particular entities (e.g. road entities can be dissolved only with road entities), see <em> Examples </em> for details. To treat particular entities, <em><a href="m.colseg.html">m.colseg</a></em> script must be used to patch attribute column to identify entities.
+
+
+<h2>NOTES</h2>
+Small areal entities are dissolved to the neighouring entity with whom they
+share the longest boundary and whom have the lowest hierarchical order (selective cleaning procedure). The hierarchical order is defined by <em><a href="m.seg.html">m.seg</a></em> script and is provided by the attribute table(s)s of the input vector data.
+The dissolving process is iterative (process is stopped when no more small
+entity is found). Small areal entities under threshold but with no
+neighbours are preserved.
+
+
+<h2>EXAMPLES</h2>
+<h3>Print statistics for dissolving areal entities for the seg1 vector map (threshold is 1200 square meters)</h3>
+
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.dispolygseg -i input=seg1 output=seg2 area=1200 unit=me
+You choose a minimum area of 1200 m2
+ For the vector seg1,
+ the dissolving small area entities operation will work
+ on 6 polygons for 28 total polygons
+ and will represent 4.3 % of the total surface
+</pre></div>
+
+<h3>Dissolving areal entities</h3>
+Dissolving areal entities for the seg1 vector map (threshold is 1200 square meters)
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.dispolygseg input=seg1 output=seg2 area=1200 unit=me
+</pre></div>
+
+
+<h3>Particular entities treatment</h3>Dissolving small areal entities
+for the seg1 vector map (threshold is 1000 square meters) and separate
+treatment for particular entities defined by the column <em>'type'</em> and the value <em>'road'</em>
+Using <em><a href="m.colseg.html">m.colseg</a></em> script to patch attribute column from field vector input data.
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.colseg input=seg1 output=seg1p polygon=field columns=type
+GRASS 6.3.0 :~ &gt; m.dispolygseg input=seg1p output=seg2 area=1000 unit=me columnp=type valuep=road
+</pre></div>
+
+
+<h2>SEE ALSO</h2>
+<a href="m.seg.html">m.seg</a>, <a href="m.sliverpolygseg.html">m.sliverpolygseg</a>, <a href="m.dispolyg.html">m.dispolyg</a>, <a href="m.colseg.html">m.colseg</a> 
+
+<h2>AUTHORS</h2>
+Michael Rabotin, UMR LISAH, Montpellier, France
+<p>rabotin@supagro.inra.fr
+
+</p><p><em> Last Changed: </em> 21 July 2010
+</p></dl>
+
+<p></p><hr>
+<P><a href="index.html">Main index</a> 
+<p>Copyright <a href="http://www.umr-lisah.fr/openfluid/index.php?page=welc&amp;lang=fr">UMR LISAH OpenFluid</a></p>
+
+</body>
+</html>

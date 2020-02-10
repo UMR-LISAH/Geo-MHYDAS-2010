@@ -1,0 +1,52 @@
+#!/usr/bin/perl -w
+############################################################################
+#
+# MODULE:       m.asciipointpl
+# AUTHOR(S):    Michael Rabotin (rabotin@supagro.inra.fr)
+# PURPOSE:      Geographical extent comparison between two features
+# REQUIREMENTS: 
+#
+# COPYRIGHT:    (C) 2009 UMR LISAH - OpenFluid
+#
+#               This program is free software under the GNU General Public
+#               License (>=v2). Read the file COPYING that comes with GRASS
+#               for details.
+#
+#############################################################################
+
+
+
+
+use strict;
+use Getopt::Long;
+
+my ($infile, $outfile);
+
+GetOptions("input=s", \$infile, "output=s", \$outfile);
+
+if(!$infile or !$outfile) {
+  print "Usage: $0 --input=[filename] --output=[filename] \n";
+  exit 0;
+}
+
+open (FILE1,"$infile");
+open (FILE2, ">> $outfile");
+
+my @tab=<FILE1>;
+chomp(@tab);
+my ($ymax,$ymin,$xmin,$xmax,$ymaxdata,$ymindata,$xmindata,$xmaxdata);
+$ymax=$tab[0];
+$ymin=$tab[1];
+$xmin=$tab[2];
+$xmax=$tab[3];
+$ymaxdata=$tab[4];
+$ymindata=$tab[5];
+$xmindata=$tab[6];
+$xmaxdata=$tab[7];
+
+if ($ymaxdata < ($ymax+1) && $ymindata > ($ymin-1) && $xmindata > ($xmin-1) && $xmaxdata < ($xmax+1)){
+	print FILE2 "ok";
+	 }
+
+close (FILE1);
+close (FILE2);

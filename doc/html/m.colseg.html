@@ -1,0 +1,86 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>GRASS GIS: m.colseg</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<link rel="stylesheet" href="grassdocs.css" type="text/css">
+</head>
+<body bgcolor="white">
+
+<img src="grass_logo.png" alt="GRASS logo"><hr align=center size=6 noshade>
+
+<h2>NAME</h2>
+<em><b>m.colseg</b></em>  - patch desired columns from input vector to the segmented output vector (for polygon or line)
+<h2>KEYWORDS</h2>
+vector, segmentation, attribute table, patch
+
+
+<h2>SYNOPSIS</h2>
+<b>m.colseg</b><br>
+<b>m.colseg help</b><br>
+<b>m.colseg</b> <b>input</b>=<em>name</em> <b>segmented</b>=<em>name</em> <b>output</b>=<em>name</em> <b>columns</b>=<em>string</em>[,<i>string</i>,...]  <b>val</b>=<em>float</em>  [--<b>overwrite</b>]  [--<b>verbose</b>]  [--<b>quiet</b>] 
+
+<h3>Flags:</h3>
+<DL>
+<DT><b>--overwrite</b></DT>
+<DD>Allow output files to overwrite existing files</DD>
+<DT><b>--verbose</b></DT>
+<DD>Verbose module output</DD>
+<DT><b>--quiet</b></DT>
+<DD>Quiet module output</DD>
+</DL>
+
+<h3>Parameters:</h3>
+<DL>
+<DT><b>input</b>=<em>name</em></DT>
+<DD>Input vector map to patch</DD>
+
+<DT><b>segmented</b>=<em>name</em></DT>
+<DD>Input segmented vector name</DD>
+
+<DT><b>output</b>=<em>name</em></DT>
+<DD>Output segmented vector name</DD>
+
+<DT><b>columns</b>=<em>string[,<i>string</i>,...]</em></DT>
+<DD>Name of desired columns to patch from INPUT to OUTPUT (name separated by comma ',')</DD>
+
+<DT><b>val</b>=<em>float</em></DT>
+<DD>distance of maximum search (in map units)</DD>
+
+</DL>
+
+<h2>DESCRIPTION</h2>
+<em>m.colseg</em> allows the user to patch attribute columns from the input vector to the segmented output vector. Several columns can be patched with one operation. If the user wants to patch columns from several input vectors, operations must be launched for each input vector. <em>m.colseg</em> allows to patch from input line vector or input polygon vector.
+
+
+<h2>NOTES</h2>
+This script is compulsory if the user wants to have attribut data from input vectors. Because, after using <em><a href="m.seg.html">m.seg</a></em>, the segmented polygon vector  (or line vector) has only the ID columns in the attribute table. 
+
+
+<h2>EXAMPLES</h2>
+<h3> Joint attribute data (num_parc,occ_sol) from field vector to seg vector</h3>
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.colseg input=field segmented=seg output=seg2 columns=num_parc,occ_sol val=0.1
+</pre></div>
+
+<h3> Joint attribute data (width,Ks) from reach vector to seg_reach vector</h3>
+<div class="code"><pre>GRASS 6.3.0 :~ &gt; m.colseg input=reach segmented=seg_reach output=seg_reach2 columns=width,Ks val=10
+</pre></div>
+
+
+<h2>SEE ALSO</h2>
+<a href="m.seg.html">m.seg</a>
+
+<h2>AUTHORS</h2>
+Michael Rabotin, UMR LISAH, Montpellier, France
+<p>rabotin@supagro.inra.fr
+
+</p><p><em> Last Changed: </em> 23 January 2012
+</p></dl>
+
+<p></p><hr>
+<P><a href="index.html">Main index</a> 
+<p>Copyright <a href="http://www.umr-lisah.fr/openfluid/index.php?page=welc&amp;lang=fr">UMR LISAH OpenFluid</a></p>
+
+
+</body>
+</html>

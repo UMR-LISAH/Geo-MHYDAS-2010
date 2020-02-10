@@ -1,0 +1,633 @@
+#!/bin/bash
+############################################################################
+#
+# MODULE:       m.snaplp
+# AUTHOR(S):    Michael Rabotin (rabotin@supagro.inra.fr)
+# PURPOSE:      snapping linear entities on polygon entities
+# REQUIREMENTS: m.testtype, m.splicepl,m.invtripl, m.tripl, m.projectpl
+#				m.testtype2, v.line.center
+# COPYRIGHT:    (C) 2009 UMR LISAH - OpenFluid
+#
+#               This program is free software under the GNU General Public
+#               License (>=v2). Read the file COPYING that comes with GRASS
+#               for details.
+#
+#############################################################################
+
+#only the lines are modified
+#snap with 3 steps:
+#- snap line points on polygon points
+#- snap line points on polygon boundaries
+#- add polygon points on line
+
+
+#%Module
+#%  description: Snapping linear entities on areal entities
+#% keywords : vector, linear, snap, areal
+#%END
+#%flag
+#% key: b
+#% description: Line creation by polygon boundaries (pseudo snap because polygone boundaries are used to create a new vector line)
+#%END
+#%option
+#% key: input
+#% type: string
+#% gisprompt: old,vector,vector
+#% description: Input vector map
+#% key_desc : name
+#% required : yes
+#%END
+#%option
+#% key: output
+#% type: string
+#% gisprompt: new,vector,vector
+#% description: Output vector map
+#% key_desc : name
+#% required : yes
+#%END
+#%option
+#% key: polygon
+#% type: string
+#% gisprompt: old,vector,vector
+#% description:Input vector polygon
+#% key_desc : name
+#% required : yes
+#%END
+#%option
+#% key: snap
+#% type: double
+#% description: maximum distance of snap (in map units)
+#% required : yes
+#%END
+
+if [ "$1" != "@ARGS_PARSED@" ] ; then
+  exec g.parser "$0" "$@"
+fi
+
+INPUT="$GIS_OPT_INPUT"
+OUTPUT="$GIS_OPT_OUTPUT"
+POLYGONE="$GIS_OPT_POLYGON"
+SNAP="$GIS_OPT_SNAP"
+
+eval `g.gisenv`
+: ${GISDBASE?} ${LOCATION_NAME?} ${MAPSET?}
+if  [ -z "$GISBASE" ]
+then
+	echo ""
+	echo "You must start GRASS to launch this program"
+	echo ""
+	exit 2
+fi
+
+#GRASS version testing, must be >= 6.3
+
+Gversion1=`g.version |cut -d" " -f2 |cut -d"." -f1`
+Gversion2=`g.version |cut -d" " -f2 |cut -d"." -f2`
+
+if [ $Gversion1 -ge 6 ];then
+	if [ $Gversion1 = 6 ] && [ $Gversion2 -lt 3 ];then 
+		g.message -e message="You must have GRASS version 6.3.0 or higher"
+		exit 2
+	fi
+else
+	g.message -e message="You must have GRASS version 6.3.0 or higher"
+	exit 2
+
+fi
+
+# awk testing
+if [ ! -x "`which awk`" ];then
+  g.message -e message="awk required, please install awk our gawk first"
+  exit 2
+fi
+
+#perl testing
+if [ ! -x "`which perl`" ];then
+  g.message -e message="perl required, please install perl first"
+  exit 2
+fi
+
+#test driver (dbf only accepted)
+if [ "`db.connect -p|head -n 1 |cut -d":" -f2 `" != "dbf" ]
+then
+	g.message -e message="Sorry, but only dbf driver accepted "
+  exit 2
+fi 
+
+# setting environment, so that awk works properly in all languages
+unset LC_ALL
+LC_NUMERIC=C
+export LC_NUMERIC
+
+# all above OK - proceed: set up temporary files
+TMP="`g.tempfile pid=$$`"
+if [ $? -ne 0 ] || [ -z "$TMP" ] ; then
+    echo "ERROR: Unable to create temporary files." 1>&2
+    exit 2
+fi
+rm -f $TMP
+PROG=`basename $0 | sed 's/\./_/g'`
+NOW=$(date +"%F-%X")
+LOGFILE="$PROG-$NOW.log"
+
+#cleanup procedure
+cleanup()
+{
+  \rm -f $TMP
+   for ((u=1;u<=63;u+=1))
+  do
+    rm -f $TMP.${PROG}.$u
+  done
+  for ((u=390;u<=502;u+=1))
+  do
+    rm -f $TMP.${PROG}.$u
+  done
+  g.mremove -f vect="$INPUT"_snaptmp* --q
+  if [ -e ~/$LOGFILE ] && [ ! -s ~/$LOGFILE ] ;then
+		rm -f ~/$LOGFILE
+  fi
+}
+
+# what to do in case of user break:
+exitprocedure()
+{
+  echo -e "\nUser break!"
+  cleanup
+  exit 2
+}
+# shell check for user break (signal list: trap -l)
+trap "exitprocedure" 2 3 15
+
+
+
+# dependancies testing
+if [ ! -x "`which m.testtype`" ];then
+  g.message -e message="m.testtype subscript required, please install it first"
+  exit 2
+fi
+
+if [ ! -x "`which m.splicepl`" ];then
+  g.message -e message="m.splicepl subscript required, please install it first"
+  exit 2
+fi
+
+if [ ! -x "`which m.invtripl`" ];then
+  g.message -e message="m.invtripl subscript required, please install it first"
+  exit 2
+fi
+
+if [ ! -x "`which m.tripl`" ];then
+  g.message -e message="m.tripl subscript required, please install it first"
+  exit 2
+fi
+
+if [ ! -x "`which m.projectpl`" ];then
+  g.message -e message="m.projectpl subscript required, please install it first"
+  exit 2
+fi
+
+if [ ! -x "`which v.line.center`" ];then
+  g.message -e message="v.line.center subscript required, please install it first"
+  exit 2
+fi
+
+#test if output vector map already exists
+eval `g.findfile element=vector file="$OUTPUT" `
+if [ "$file" ] ; then
+  if [ -z "$GRASS_OVERWRITE" ] || [ "$GRASS_OVERWRITE" -eq 0 ]; then
+    g.message -w message="<$OUTPUT> already exists in this mapset or in another mapset of this location. Use the --o flag to overwrite." 1>&2
+    exit 2
+  else
+    g.message -w message="<$OUTPUT>  already exists and will be overwritten"
+  fi
+fi
+
+
+#test if OUTPUT vector name is allowed
+v.in.region output=$OUTPUT --q  |grep -v "SQL" 2>$TMP.${PROG}.63
+	
+if [ -s "$TMP.${PROG}.63" ];then
+	g.message -w message="Illegal vector map name <$OUTPUT>" 1>&2
+    exit 2
+else
+	g.remove vect=$OUTPUT --q  
+fi
+
+#test if input temporary vector map already exist
+g.mlist type=vect pattern="$INPUT"_snaptmp*  > $TMP.${PROG}.1
+if [ -s "$TMP.${PROG}.1" ];then
+  g.message -w message="<$INPUT>_snaptmp name for temporay file is already used in this mapset or in another mapset of this location"
+  cleanup
+  exit 2
+
+fi
+
+# test if INPUT vector map exists
+g.findfile element=vector mapset=${MAPSET?} file=${INPUT} > /dev/null
+if [ $? -ne 0 ] ; then
+  g.message -w  message="<$INPUT> not found"
+  cleanup
+   exit 2
+fi
+
+
+m.testtype input=$INPUT > $TMP.${PROG}.2
+
+#if input vector map is not a line vector, exit program
+if [ "`cat $TMP.${PROG}.2`" != "line" ] ; then
+  g.message -e message="<$INPUT> isn't a vector line"
+  cleanup
+  exit 2
+fi
+
+# test if POLYGONE vector map exists
+g.findfile element=vector mapset=${MAPSET?} file=${POLYGONE} > /dev/null
+if [ $? -ne 0 ] ; then
+  g.message -w  message="<$POLYGONE> not found"
+  cleanup
+   exit 2
+fi
+
+
+m.testtype input=$POLYGONE > $TMP.${PROG}.3
+
+#if POLYGONE vector map is not a polygon vector, exit program
+if [ "`cat $TMP.${PROG}.3`" != "polygone" ] ; then
+  g.message -e message="<$POLYGONE> isn't a vector polygon"
+  cleanup
+  exit 2
+fi
+
+# test SNAP value
+if [ "`echo $SNAP |grep "[[:digit:]]" | wc -c`" = "0"  ] ;then
+  g.message -e message="<SNAP> value isn't numeric"
+  cleanup
+  exit 2
+fi
+if [ "`echo $SNAP |grep "[[:alpha:]]" | wc -c`" != "0" ] ;then
+	g.message -e message="<SNAP> value isn't numeric"
+	cleanup
+	exit 2
+fi
+
+
+#copy
+g.copy vect=$INPUT,"$INPUT"_snaptmp --q 2>>~/$LOGFILE
+
+if [ $GIS_FLAG_B -eq 1 ] ;then
+	#creation of a  correct INPUT to  POLYGONE
+	v.category input=$POLYGONE output="$INPUT"_snaptmp1 type=boundary option=add layer=2 --q  2>>~/$LOGFILE
+	v.extract input="$INPUT"_snaptmp1 output="$INPUT"_snaptmp2 type=boundary layer=2 --q  2>>~/$LOGFILE
+	v.type input="$INPUT"_snaptmp2 output="$INPUT"_snaptmp3 type=boundary,line --q  2>>~/$LOGFILE
+	v.category input="$INPUT"_snaptmp3 output="$INPUT"_snaptmp4 type=line layer=2 option=del --q  2>>~/$LOGFILE
+	v.category input="$INPUT"_snaptmp4 output="$INPUT"_snaptmp5 type=line layer=1 option=add --q  2>>~/$LOGFILE
+	v.line.center input="$INPUT"_snaptmp5 output="$INPUT"_snaptmp6 layer=1 2>/dev/null
+	v.db.addtable map="$INPUT"_snaptmp6 columns="rscat INTEGER" --q  2>>~/$LOGFILE
+	v.distance from="$INPUT"_snaptmp6 from_type=point to=$INPUT to_type=line to_layer=1 upload=cat column=rscat dmax=$SNAP --q  2>/dev/null
+	v.db.select -c map="$INPUT"_snaptmp6 column=cat nv=0 where="rscat <>0" > $TMP.${PROG}.52 --q  2>>~/$LOGFILE
+	v.extract input="$INPUT"_snaptmp5 output="$INPUT"_snaptmp7 type=line layer=1 file=$TMP.${PROG}.52 --q  2>>~/$LOGFILE
+	v.db.addtable map="$INPUT"_snaptmp7 --q  2>>~/$LOGFILE
+	
+	#creation of a clean attribute table
+	v.info --q -c map=$INPUT |cut -d"|" -f2 |grep -v "^cat$" >$TMP.${PROG}.53 2>>~/$LOGFILE
+	v.info --q -c map=$INPUT >$TMP.${PROG}.54 2>>~/$LOGFILE
+	
+	# transform  "$INPUT"_snaptmp7 in point vector map
+	v.line.center input="$INPUT"_snaptmp7 output="$INPUT"_snaptmp8 layer=1 2>/dev/null
+	v.db.addtable map="$INPUT"_snaptmp8 --q 2>>~/$LOGFILE
+	
+	for v in `cat $TMP.${PROG}.53`;do
+		grep "$v$" $TMP.${PROG}.54 |cut -d"|" -f1> $TMP.${PROG}.55 2>>~/$LOGFILE
+		if [ "`cat $TMP.${PROG}.55`" = "CHARACTER" ];then
+			db.describe table=$INPUT --q > $TMP.${PROG}.56
+			grep -n "$v$" $TMP.${PROG}.56 |cut -d":" -f1 > $TMP.${PROG}.57 2>>~/$LOGFILE
+			typeset -i nbline
+			nbline=`cat $TMP.${PROG}.57`+3
+			m.splicepl $nbline $TMP.${PROG}.56 |cut -d":" -f2 > $TMP.${PROG}.58 2>>~/$LOGFILE
+			v.db.addcol map="$INPUT"_snaptmp7 layer=1 columns="$v VARCHAR(`cat $TMP.${PROG}.58`)"--q  2>>~/$LOGFILE
+			v.db.addcol map="$INPUT"_snaptmp8 layer=1 columns="$v VARCHAR(`cat $TMP.${PROG}.58`)" --q 2>>~/$LOGFILE
+		else
+			v.db.addcol map="$INPUT"_snaptmp7 layer=1 columns="$v `cat $TMP.${PROG}.55`" --q 2>>~/$LOGFILE
+			v.db.addcol map="$INPUT"_snaptmp8 layer=1 columns="$v `cat $TMP.${PROG}.55`" --q 2>>~/$LOGFILE
+		fi
+
+		
+
+		# v.distance command between  "$INPUT"_snaptmp8 points and  INPUT lines
+		v.distance from="$INPUT"_snaptmp8 to=$INPUT from_type=point to_type=line from_layer=1 to_layer=1 dmax=$SNAP upload=to_attr column=$v to_column=$v 2>/dev/null 
+		
+		#v.db.update command
+		v.db.select -c map="$INPUT"_snaptmp8 column=cat,$v fs="|" nv=0 > $TMP.${PROG}.59 --q 2>>~/$LOGFILE
+		
+		
+		for q in `cat $TMP.${PROG}.59`;do 
+			echo "$q" |cut -d"|" -f1 > $TMP.${PROG}.60 2>>~/$LOGFILE
+			echo "$q" |cut -d"|" -f2 > $TMP.${PROG}.61 2>>~/$LOGFILE
+			v.db.update map="$INPUT"_snaptmp7 column=$v value=`cat $TMP.${PROG}.61` where="cat=`cat $TMP.${PROG}.60`" --q 2>>~/$LOGFILE
+			rm -f $TMP.${PROG}.61 $TMP.${PROG}.60
+		done
+		
+		rm -f $TMP.${PROG}.55 $TMP.${PROG}.56 $TMP.${PROG}.57 $TMP.${PROG}.58 $TMP.${PROG}.59
+		if [ ! -z "`cat ~/$LOGFILE`" ];then
+			g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+			cleanup
+			exit 2
+		fi
+	done
+	g.copy vect="$INPUT"_snaptmp7,$OUTPUT --q 2>>~/$LOGFILE
+	#cleanup procedure
+	cleanup
+	exit 0
+fi
+
+
+# storing cat of  INPUT_snaptmp
+v.category input="$INPUT"_snaptmp type=line option=print --q > $TMP.${PROG}.4 2>>~/$LOGFILE
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+
+#storing  POLYGONE boundaries
+v.category input=$POLYGONE output="$INPUT"_snaptmp1 type=boundary option=add --q 2>>~/$LOGFILE
+v.extract input="$INPUT"_snaptmp1 output="$INPUT"_snaptmp2 type=boundary --q 2>>~/$LOGFILE
+v.type input="$INPUT"_snaptmp2 output="$INPUT"_snaptmp3 type=boundary,line --q 2>>~/$LOGFILE
+#storing  "$INPUT"_snaptmp3 vertices 
+v.to.points -v input="$INPUT"_snaptmp3 type=line output="$INPUT"_snaptmp4 --q 2>>~/$LOGFILE
+#coordinate points calculation 
+v.db.addcol map="$INPUT"_snaptmp4 layer=2 columns="x double precision,y double precision,dist DOUBLE PRECISION" --q 2>>~/$LOGFILE
+v.to.db map="$INPUT"_snaptmp4 layer=2 type=point option=coor units=me column=x,y --q 2>>~/$LOGFILE
+#removing doubloon points
+v.db.select -c map="$INPUT"_snaptmp4 layer=2 column=cat,x,y fs=" " nv=0 --q > $TMP.${PROG}.5 2>>~/$LOGFILE
+sort -t" " -k2g -k3g $TMP.${PROG}.5 > $TMP.${PROG}.6 2>>~/$LOGFILE
+uniq -f1 -u $TMP.${PROG}.6 > $TMP.${PROG}.7 2>>~/$LOGFILE
+uniq -f1 -d $TMP.${PROG}.6 >> $TMP.${PROG}.7 2>>~/$LOGFILE
+sort -t" " -k3g -k2g $TMP.${PROG}.7 > $TMP.${PROG}.8 2>>~/$LOGFILE
+uniq -f1 -u $TMP.${PROG}.8 > $TMP.${PROG}.9 2>>~/$LOGFILE
+uniq -f1 -d $TMP.${PROG}.8 >> $TMP.${PROG}.9 2>>~/$LOGFILE
+cut -d" " -f1 $TMP.${PROG}.9 > $TMP.${PROG}.10 2>>~/$LOGFILE
+v.extract input="$INPUT"_snaptmp4 output="$INPUT"_snaptmp5 type=point layer=2 file=$TMP.${PROG}.10 --q 2>>~/$LOGFILE
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+
+
+typeset -i nbline
+nbline=1
+
+wc -l $TMP.${PROG}.4 |cut -d" " -f1 > $TMP.${PROG}.11
+
+for z in `cat $TMP.${PROG}.4`;do
+  echo "*** Line $nbline on `cat $TMP.${PROG}.11` total lines ***"
+
+  ############## snapping INPUT points on POLYGONE points
+  v.extract input="$INPUT"_snaptmp output="$INPUT"_snaptmp6 type=line list=$z --q 2>>~/$LOGFILE
+  # storing  INPUT_snaptmp6 vertices
+  v.to.points -v input="$INPUT"_snaptmp6 type=line output="$INPUT"_snaptmp7 --q 2>>~/$LOGFILE
+  v.db.addcol map="$INPUT"_snaptmp7 layer=2 columns="to_dist double precision,catsurf INTEGER,x double precision,y double precision" --q 2>>~/$LOGFILE
+  v.to.db map="$INPUT"_snaptmp7 layer=2 type=point option=coor units=me column=x,y --q 2>>~/$LOGFILE
+  # v.distance command from INPUT points to POLYGONE points
+  v.distance from="$INPUT"_snaptmp7 to="$INPUT"_snaptmp5 from_type=point to_type=point from_layer=2 to_layer=2 dmax=$SNAP upload=dist,cat column=to_dist,catsurf --q 2>>~/$LOGFILE
+  #extraction of  INPUT_snaptmp7 points with to_dist >0 and to_dist < $SNAP
+  v.db.select -c map="$INPUT"_snaptmp7 layer=2 column=cat,catsurf where="(to_dist > 0.001 AND to_dist < $SNAP)" fs="|" nv=0 --q > $TMP.${PROG}.12 2>>~/$LOGFILE
+
+	if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+	fi
+
+
+  #if we have points with non Null value
+  if [ -s "$TMP.${PROG}.12" ] ;then
+    #for each cat, v.edit command to move these points with the help of  coordinate points of POLYGONE
+    for w in `cat $TMP.${PROG}.12`;do
+      echo "$w"|cut -d"|" -f1 > $TMP.${PROG}.13 2>>~/$LOGFILE
+      echo "$w"|cut -d"|" -f2 > $TMP.${PROG}.14 2>>~/$LOGFILE
+      v.db.select -c map="$INPUT"_snaptmp7 layer=2 column=x where="cat=`cat $TMP.${PROG}.13`" nv=0 > $TMP.${PROG}.15 --q 2>>~/$LOGFILE
+      v.db.select -c map="$INPUT"_snaptmp7 layer=2 column=y where="cat=`cat $TMP.${PROG}.13`" nv=0 > $TMP.${PROG}.16 --q 2>>~/$LOGFILE
+      v.db.select -c map="$INPUT"_snaptmp5 layer=2 column=x where="cat=`cat $TMP.${PROG}.14`" nv=0 > $TMP.${PROG}.17 --q 2>>~/$LOGFILE
+      v.db.select -c map="$INPUT"_snaptmp5 layer=2 column=y where="cat=`cat $TMP.${PROG}.14`" nv=0 > $TMP.${PROG}.18 --q 2>>~/$LOGFILE
+      #difference between  $TMP.${PROG}.14 (ending coordinate ) and $TMP.${PROG}.13 (starting coordinate)
+      echo "`cat $TMP.${PROG}.17` `cat $TMP.${PROG}.15`"|awk '{print $1-$2}' > $TMP.${PROG}.19 2>>~/$LOGFILE
+      echo "`cat $TMP.${PROG}.18` `cat $TMP.${PROG}.16`"|awk '{print $1-$2}' > $TMP.${PROG}.20 2>>~/$LOGFILE
+      #we move the point in INPUT_snaptmp
+      v.edit map="$INPUT"_snaptmp tool=vertexmove coord=`cat $TMP.${PROG}.15`,`cat $TMP.${PROG}.16` thresh=0.05 move=`cat $TMP.${PROG}.19`,`cat $TMP.${PROG}.20` --q 2>/dev/null
+
+
+      rm -f $TMP.${PROG}.13 $TMP.${PROG}.14 $TMP.${PROG}.15 $TMP.${PROG}.16 $TMP.${PROG}.17
+      rm -f $TMP.${PROG}.18 $TMP.${PROG}.19 $TMP.${PROG}.20
+    done
+  fi
+
+  g.remove vect="$INPUT"_snaptmp7,"$INPUT"_snaptmp6 --q 2>>~/$LOGFILE
+
+	if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+	fi
+  #################### snapping INPUT points on POLYGONE lines
+
+
+#############################################################
+  # v.distance command between INPUT_snaptmp6 points to  POLYGONE boundaries
+  v.extract input="$INPUT"_snaptmp output="$INPUT"_snaptmp6 type=line list=$z --q 2>>~/$LOGFILE
+  # storing  INPUT_snaptmp6 vertices 
+  v.to.points -v input="$INPUT"_snaptmp6 type=line output="$INPUT"_snaptmp7 --q 2>>~/$LOGFILE
+  v.db.addcol map="$INPUT"_snaptmp7 layer=2 columns="to_dist double precision,catsurf INTEGER,x double precision,y double precision" --q 2>>~/$LOGFILE
+  v.to.db map="$INPUT"_snaptmp7 layer=2 type=point option=coor units=me column=x,y --q 2>>~/$LOGFILE
+  v.distance from="$INPUT"_snaptmp7 to="$INPUT"_snaptmp3 from_type=point to_type=line from_layer=2 to_layer=1 upload=dist,cat,to_along column=to_dist,catsurf,along --q 2>>~/$LOGFILE
+  v.to.db map="$INPUT"_snaptmp7 type=point layer=2 option=coor units=me column=x,y --q 2>>~/$LOGFILE
+
+  #extraction of  INPUT_snaptmp7 points with to_dist >0 and to_dist < $SNAP
+  v.db.select -c map="$INPUT"_snaptmp7 layer=2 column=cat,catsurf,along,x,y where="(to_dist > 0.001 AND to_dist < $SNAP)" fs=" " nv=0 --q > $TMP.${PROG}.21 2>>~/$LOGFILE
+  
+	if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+	fi
+  
+  #for each points of  $TMP.${PROG}.21
+  if [ -s "$TMP.${PROG}.21" ] ;then
+    wc -l $TMP.${PROG}.21 |cut -d" " -f1 > $TMP.${PROG}.22 2>>~/$LOGFILE
+    typeset -i nb2
+    nb2=`cat $TMP.${PROG}.22`
+    for ((a=1;a<=$nb2;a+=1));do
+      m.splicepl $a $TMP.${PROG}.21 > $TMP.${PROG}.23 2>>~/$LOGFILE
+      cut -d" " -f4,5 $TMP.${PROG}.23 > $TMP.${PROG}.24 2>>~/$LOGFILE
+      #searching the point of the boundary placed before the projected point
+      v.db.select -c map="$INPUT"_snaptmp4 column=cat,x,y,along layer=2 where="lcat=`cat $TMP.${PROG}.23|cut -d" " -f2` AND along < `cat $TMP.${PROG}.23  |cut -d" " -f3`" fs=" " nv=0 --q > $TMP.${PROG}.25 2>>~/$LOGFILE
+      m.invtripl --input=$TMP.${PROG}.25 --output=$TMP.${PROG}.26 --col=3 2>>~/$LOGFILE
+      head -n 1 $TMP.${PROG}.26 |cut -d" " -f2,3 > $TMP.${PROG}.27 2>>~/$LOGFILE
+  
+    #searching the point of the boundary placed after the projected point
+      v.db.select -c map="$INPUT"_snaptmp4 column=cat,x,y,along layer=2 where="lcat=`cat $TMP.${PROG}.23|cut -d" " -f2` AND along > `cat $TMP.${PROG}.23  |cut -d" " -f3`" nv=0 fs=" " --q > $TMP.${PROG}.28 2>>~/$LOGFILE
+      m.tripl --input=$TMP.${PROG}.28 --output=$TMP.${PROG}.29 --col=3 2>>~/$LOGFILE
+      head -n 1 $TMP.${PROG}.29 |cut -d" " -f2,3 > $TMP.${PROG}.30 2>>~/$LOGFILE
+  
+      #wrting coordinates xA yA xM yM xB yB
+      echo "`cat $TMP.${PROG}.27` `cat $TMP.${PROG}.24` `cat $TMP.${PROG}.30`" > $TMP.${PROG}.31 2>>~/$LOGFILE
+  
+      m.projectpl --input=$TMP.${PROG}.31 --output=$TMP.${PROG}.32 --dist=$SNAP 2>>~/$LOGFILE
+	  if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+	  fi
+      #if  $TMP.${PROG}.32 exists, moving the point
+      if [ -e "$TMP.${PROG}.32" ] && [ -s "$TMP.${PROG}.32" ];then
+        #difference between  $TMP.${PROG}.32 (ending coordinate ) and $TMP.${PROG}.24 (starting coordinate)
+        echo "`cat $TMP.${PROG}.32|cut -d" " -f1 `-`cat $TMP.${PROG}.24|cut -d" " -f1`"|bc > $TMP.${PROG}.33 2>>~/$LOGFILE
+        echo "`cat $TMP.${PROG}.32|cut -d" " -f2 `-`cat $TMP.${PROG}.24|cut -d" " -f2`"|bc > $TMP.${PROG}.34 2>>~/$LOGFILE
+        #moving the point in  INPUT_snaptmp
+
+        v.edit map="$INPUT"_snaptmp tool=vertexmove coord=`cat $TMP.${PROG}.24|cut -d" " -f1`,`cat $TMP.${PROG}.24|cut -d" " -f2` thresh=0.05 move=`cat $TMP.${PROG}.33`,`cat $TMP.${PROG}.34` --q 2>>~/$LOGFILE
+ 
+
+      fi
+      rm -f $TMP.${PROG}.23 $TMP.${PROG}.24 $TMP.${PROG}.25 $TMP.${PROG}.26 $TMP.${PROG}.27 $TMP.${PROG}.28
+      rm -f $TMP.${PROG}.29 $TMP.${PROG}.30 $TMP.${PROG}.31 $TMP.${PROG}.32 $TMP.${PROG}.33 $TMP.${PROG}.34
+	if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+	fi	  
+    done
+  fi
+  g.remove vect="$INPUT"_snaptmp7,"$INPUT"_snaptmp6 --q 2>>~/$LOGFILE
+  
+
+
+
+  ##################### snapping POYGONE points on INPUT lines 
+  #v.distance command between  POLYGONE point and  INPUT
+  v.extract input="$INPUT"_snaptmp output="$INPUT"_snaptmp6 type=line list=$z --q 2>>~/$LOGFILE
+  v.distance from="$INPUT"_snaptmp5 to="$INPUT"_snaptmp6 from_type=point to_type=line from_layer=2 to_layer=1 upload=dist column=dist --q 2>>~/$LOGFILE
+  v.db.select -c map="$INPUT"_snaptmp5 layer=2 column=x,y where="dist > 0.001 AND dist < $SNAP" fs="," nv=0 --q > $TMP.${PROG}.35 2>>~/$LOGFILE
+
+	if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+	fi
+  #if $TMP.${PROG}.35 file is not empty, for command
+  if [ -s "$TMP.${PROG}.35" ];then
+
+
+    wc -l $TMP.${PROG}.35 |cut -d" " -f1 > $TMP.${PROG}.36 2>>~/$LOGFILE
+    typeset -i nby
+    nby=`cat $TMP.${PROG}.36`
+    for ((y=1;y<=$nby;y+=1));do
+      m.splicepl $y $TMP.${PROG}.35 > $TMP.${PROG}.26 2>>~/$LOGFILE
+
+      v.to.points -v input="$INPUT"_snaptmp6 output="$INPUT"_snaptmp8 type=line --q 2>>~/$LOGFILE
+      v.build map="$INPUT"_snaptmp8  |head -n 3 |tail -n 1 |cut -d" " -f1 >  $TMP.${PROG}.501 2>>~/$LOGFILE
+      g.remove vect="$INPUT"_snaptmp8 --q 2>>~/$LOGFILE
+      v.edit map="$INPUT"_snaptmp6 tool=vertexadd coords=`cat $TMP.${PROG}.26` cats=$z thresh=$SNAP --q 2>>~/$LOGFILE
+       #if v.edit can not add new point, test if et exit loop
+           
+      v.to.points -v input="$INPUT"_snaptmp6 output="$INPUT"_snaptmp8 type=line --q 2>>~/$LOGFILE
+      v.build map="$INPUT"_snaptmp8 |head -n 3 |tail -n 1 |cut -d" " -f1 > $TMP.${PROG}.502 2>>~/$LOGFILE
+      #$TMP.${PROG}.501 should contain -1 point compared to $TMP.${PROG}.502,
+      # if number of points of $TMP.${PROG}.501 = $TMP.${PROG}.502, so  v.edit don't work
+      #exit loop
+		if [ ! -z "`cat ~/$LOGFILE`" ];then
+			g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+			cleanup
+			exit 2
+		fi	  
+      if [ "`cat $TMP.${PROG}.502`" != "`cat $TMP.${PROG}.501`" ];then
+      
+	echo "P 1 1" > $TMP.${PROG}.28 2>>~/$LOGFILE
+	cut -d"," -f1 $TMP.${PROG}.26 > $TMP.${PROG}.37 2>>~/$LOGFILE
+	cut -d"," -f2 $TMP.${PROG}.26 > $TMP.${PROG}.38 2>>~/$LOGFILE
+	echo "`cat $TMP.${PROG}.37` `cat $TMP.${PROG}.38`" >> $TMP.${PROG}.28 2>>~/$LOGFILE
+	echo "1 1" >> $TMP.${PROG}.28 2>>~/$LOGFILE
+	v.edit -n tool=create map="$INPUT"_snaptmp9 input=/$TMP.${PROG}.28 --q 2>>~/$LOGFILE
+
+	v.db.addtable map="$INPUT"_snaptmp9 --q 2>>~/$LOGFILE
+
+	v.db.addcol map="$INPUT"_snaptmp8 layer=2 column="dist DOUBLE PRECISION,x DOUBLE PRECISION,y DOUBLE PRECISION" --q 2>>~/$LOGFILE
+
+	v.to.db map="$INPUT"_snaptmp8 layer=2 option=coor units=me column=x,y --q 2>>~/$LOGFILE
+
+	v.distance from="$INPUT"_snaptmp8 to="$INPUT"_snaptmp9 from_type=point to_type=point from_layer=2 to_layer=1 upload=dist column=dist dmax=$SNAP --q 2>>~/$LOGFILE
+
+	v.db.select -c map="$INPUT"_snaptmp8 layer=2 column=x,dist where="dist > 0.001 AND dist < $SNAP" fs=" " nv=0 --q > $TMP.${PROG}.390 2>>~/$LOGFILE
+	m.tripl --input=$TMP.${PROG}.390 --output=$TMP.${PROG}.391 --col=1 2>>~/$LOGFILE
+	head -n 1 $TMP.${PROG}.391 |cut -d" " -f1 > $TMP.${PROG}.39 2>>~/$LOGFILE
+	v.db.select -c map="$INPUT"_snaptmp8 layer=2 column=y,dist where="dist > 0.001 AND dist < $SNAP" fs=" " nv=0 --q > $TMP.${PROG}.400 2>>~/$LOGFILE
+	m.tripl --input=$TMP.${PROG}.400 --output=$TMP.${PROG}.401 --col=1 2>>~/$LOGFILE
+	head -n 1 $TMP.${PROG}.401 |cut -d" " -f1 > $TMP.${PROG}.40 2>>~/$LOGFILE
+	#difference between  $TMP.${PROG}.37 $TMP.${PROG}.38 (ending coordinate ) et $TMP.${PROG}.39 $TMP.${PROG}.40 (starting coordinate)
+	echo "`cat $TMP.${PROG}.37`-`cat $TMP.${PROG}.39`"|bc > $TMP.${PROG}.33 2>>~/$LOGFILE
+	echo "`cat $TMP.${PROG}.38`-`cat $TMP.${PROG}.40`"|bc > $TMP.${PROG}.34 2>>~/$LOGFILE
+	#moving the point in  INPUT_snaptmp
+
+
+	v.edit map="$INPUT"_snaptmp tool=vertexadd coords=`cat $TMP.${PROG}.26` cats=$z thresh=$SNAP --q 2>>~/$LOGFILE
+
+	v.edit map="$INPUT"_snaptmp tool=vertexmove coord=`cat $TMP.${PROG}.39`,`cat $TMP.${PROG}.40` thresh=0.05 move=`cat $TMP.${PROG}.33`,`cat $TMP.${PROG}.34` --q 2>>~/$LOGFILE
+
+	if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+	fi
+
+
+	rm -f $TMP.${PROG}.28 $TMP.${PROG}.33 $TMP.${PROG}.34 
+	rm -f $TMP.${PROG}.37 $TMP.${PROG}.38 $TMP.${PROG}.39 $TMP.${PROG}.40
+	rm -f $TMP.${PROG}.390 $TMP.${PROG}.391 $TMP.${PROG}.400 $TMP.${PROG}.401
+	g.remove vect="$INPUT"_snaptmp9 --q  2>>~/$LOGFILE
+      fi
+      rm -f $TMP.${PROG}.26 $TMP.${PROG}.502 $TMP.${PROG}.501
+      g.remove vect="$INPUT"_snaptmp8,"$INPUT"_snaptmp6 --q 2>>~/$LOGFILE
+      g.copy vect="$INPUT"_snaptmp,"$INPUT"_snaptmp6 --q 2>>~/$LOGFILE
+	if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+	fi     
+    done
+  fi
+
+
+
+  g.remove vect="$INPUT"_snaptmp6 --q 2>>~/$LOGFILE
+  rm -f $TMP.${PROG}.12 $TMP.${PROG}.21 $TMP.${PROG}.22 $TMP.${PROG}.35 $TMP.${PROG}.36
+  nbline=$nbline+1
+  
+  #checking that no doubloon nodes
+  g.copy vect="$INPUT"_snaptmp,"$INPUT"_snaptmp10 --q 2>>~/$LOGFILE
+  v.edit map="$INPUT"_snaptmp10 cats=$z tool=break type=line --q 2>>~/$LOGFILE
+  m.testtype2 input="$INPUT"_snaptmp10 > $TMP.${PROG}.420 2>>~/$LOGFILE
+  m.testtype2 input="$INPUT"_snaptmp > $TMP.${PROG}.421 2>>~/$LOGFILE
+  if [ "`cat $TMP.${PROG}.420`" != "`cat $TMP.${PROG}.421`" ] ;then
+    v.edit map="$INPUT"_snaptmp cats=$z tool=break type=line --q 2>>~/$LOGFILE
+    v.edit map="$INPUT"_snaptmp cats=$z tool=merge type=line --q 2>>~/$LOGFILE
+  fi
+  g.remove vect="$INPUT"_snaptmp10 --q 2>>~/$LOGFILE
+  rm -f $TMP.${PROG}.420 $TMP.${PROG}.421
+	if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+	fi   
+done
+
+#snap all lines of INPUT
+v.clean input="$INPUT"_snaptmp output=$OUTPUT type=line tool=snap thresh=0.02 --q 2>/dev/null
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+#cleanup procedure
+cleanup
+exit 0

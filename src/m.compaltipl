@@ -1,0 +1,52 @@
+#!/usr/bin/perl -w
+############################################################################
+#
+# MODULE:       m.compaltipl
+# AUTHOR(S):    Michael Rabotin (rabotin@supagro.inra.fr)
+# PURPOSE:      Elevation comparison between two features (float accepted)
+# REQUIREMENTS: 
+#
+# COPYRIGHT:    (C) 2009 UMR LISAH - OpenFluid
+#
+#               This program is free software under the GNU General Public
+#               License (>=v2). Read the file COPYING that comes with GRASS
+#               for details.
+#
+#############################################################################
+
+
+use strict;
+use Getopt::Long;
+
+my ($infile1, $infile2, $outfile);
+
+GetOptions("input1=s", \$infile1, "input2=s", \$infile2, "output=s", \$outfile);
+
+if(!$infile1 or !$infile2 or !$outfile) {
+  print "Usage: $0 --input1=[filename] --input2=[filename] --output=[filename]\n";
+  exit 0;
+}
+
+open (FILE1,"$infile1");
+open (FILE2,"$infile2");
+open (FILE3, ">> $outfile");
+
+
+my($catA,$altiA)=split / /,<FILE1>;
+close (FILE1);
+
+my($catB,$altiB)=split / /,<FILE2>;
+close (FILE2);
+if ($altiA != $altiB){
+	if ($altiA < $altiB){
+		print FILE3 "$catA\n";	
+	}
+	else {
+		print FILE3 "$catB\n";
+	}
+}
+else {
+	#arbitrary choice !!
+	print FILE3 "$catB\n";
+}
+close (FILE3);

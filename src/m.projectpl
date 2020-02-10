@@ -1,0 +1,74 @@
+#!/usr/bin/perl -w
+############################################################################
+#
+# MODULE:       m.projectpl
+# AUTHOR(S):    Michael Rabotin (rabotin@supagro.inra.fr)
+# PURPOSE:      Coordinate calcul for a point projection on a line
+# REQUIREMENTS: 
+#
+# COPYRIGHT:    (C) 2009 UMR LISAH - OpenFluid
+#
+#               This program is free software under the GNU General Public
+#               License (>=v2). Read the file COPYING that comes with GRASS
+#               for details.
+#
+#############################################################################
+
+
+
+use strict;
+use Getopt::Long;
+
+my ($infile, $outfile, $dist);
+
+GetOptions("input=s", \$infile, "output=s", \$outfile, "dist=f", \$dist);
+
+if(!$infile or !$outfile or !$dist) {
+  print "Usage: $0 --input=[filename] --output=[filename] --dist=[snap distance]\n";
+  exit 0;
+}
+
+open (FILE1,"$infile");
+open (FILE2, ">> $outfile");
+
+
+chomp $dist;
+
+my($xH2,$yH2,$l);
+my ($xH,$yH,$dHM,$dHM2);
+
+my @tab=<FILE1>;
+close (FILE1);
+my($xA,$yA,$xM,$yM,$xB,$yB)=split / /,$tab[0];
+if ($xA == $xB && $yA == $yB){
+  $xH2=$xA;
+  $yH2=$yA;
+  print FILE2 "$xH2 $yH2";
+  close (FILE2);
+  exit;
+}
+#l calciulation  (vector AH= vector lAB) with H : orthogonal projection of M on AB
+$l=(($xM-$xA)*($xB-$xA)+($yM-$yA)*($yB-$yA))/(($xB-$xA)**2+($yB-$yA)**2);
+
+#H coordinate calculation
+$xH=$l*($xB-$xA)+$xA;
+$yH=$l*($yB-$yA)+$yA;
+
+#Truncation with  4 decimals of H coordinates
+$xH2= sprintf("%.4f",$xH);
+$yH2= sprintf("%.4f",$yH);
+
+# dHM distance calculation
+$dHM=sqrt(($xH-$xM)**2+($yH-$yM)**2);
+
+#dHM2 : Truncation with  4 decimals of dHM
+$dHM2= sprintf("%.4f",$dHM);
+
+#if dHM2 > SNAP , we let outfile empty
+
+if ($dHM2 < $dist){
+  print FILE2 "$xH2 $yH2";
+}
+
+close (FILE2);
+

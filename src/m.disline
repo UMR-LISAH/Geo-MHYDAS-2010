@@ -1,0 +1,725 @@
+#!/bin/bash
+############################################################################
+#
+# MODULE:       m.disline
+# AUTHOR(S):    Michael Rabotin (rabotin@supagro.inra.fr)
+# PURPOSE:      dissolving small linear entities for vector line
+# REQUIREMENTS: m.testtype, m.pourcenpl, m.tripl
+# COPYRIGHT:    (C) 2009 UMR LISAH - OpenFluid
+#
+#               This program is free software under the GNU General Public
+#               License (>=v2). Read the file COPYING that comes with GRASS
+#               for details.
+#
+#############################################################################
+#%Module
+#%  description: dissolving small linear entities
+#%  keywords : vector, line, dissolve
+#%END
+#%flag
+#% key: i
+#% description: print only statistics (no calcul) and exit
+#%end
+#%option
+#% key: input
+#% type: string
+#% gisprompt: old,vector,vector
+#% description: Input vector name
+#% key_desc : name
+#% required : yes
+#%END
+#%option
+#% key: output
+#% type: string
+#% gisprompt: new,vector,vector
+#% description: Output vector name
+#% key_desc : name
+#% required : yes
+#%END
+#%option
+#% key: length
+#% type: double
+#% description: min length value
+#% required : yes
+#%END
+#%option
+#% key: unit 
+#% type: string
+#% description: units (meters(me), kilometers(k))
+#% options : me,k
+#% answer : me
+#% required : no
+#%END
+#%option
+#% key: columnp
+#% type: string
+#% description: Name of column used to treat particular entities (column must exist)
+#% required : no
+#%END
+#%option
+#% key: valuep
+#% type: string
+#% description: value used in 'columnp' to identify the particular entities
+#% required : no
+#%END
+
+eval `g.gisenv`
+: ${GISDBASE?} ${LOCATION_NAME?} ${MAPSET?}
+
+if [ "$1" != "@ARGS_PARSED@" ] ; then
+  exec g.parser "$0" "$@"
+fi
+
+INPUT="$GIS_OPT_INPUT"
+OUTPUT="$GIS_OPT_OUTPUT"
+LENGTH="$GIS_OPT_LENGTH"
+UNIT="$GIS_OPT_UNIT"
+COLUMNP="$GIS_OPT_COLUMNP"
+VALUEP="$GIS_OPT_VALUEP"
+
+## begin step1 : dependancies tests ##
+
+
+eval `g.gisenv`
+: ${GISDBASE?} ${LOCATION_NAME?} ${MAPSET?}
+if  [ -z "$GISBASE" ]
+then
+	echo ""
+	echo "You must start GRASS to launch this program"
+	echo ""
+	exit 2
+fi
+
+#GRASS version testing, must be >= 6.3
+
+Gversion1=`g.version |cut -d" " -f2 |cut -d"." -f1`
+Gversion2=`g.version |cut -d" " -f2 |cut -d"." -f2`
+
+if [ $Gversion1 -ge 6 ];then
+	if [ $Gversion1 = 6 ] && [ $Gversion2 -lt 3 ];then 
+		g.message -e message="You must have GRASS version 6.3.0 or higher"
+		exit 2
+	fi
+else
+	g.message -e message="You must have GRASS version 6.3.0 or higher"
+	exit 2
+
+fi
+
+
+
+# awk testing
+if [ ! -x "`which awk`" ];then
+  g.message -e message="awk required, please install awk our gawk first"
+  exit 2
+fi
+
+#perl testing
+if [ ! -x "`which perl`" ];then
+  g.message -e message="perl required, please install perl first"
+  exit 2
+fi
+
+#test driver (dbf only accepted)
+if [ "`db.connect -p|head -n 1 |cut -d":" -f2 `" != "dbf" ]
+then
+	g.message -e message="Sorry, but only dbf driver accepted "
+  exit 2
+fi 
+
+# setting environment, so that awk works properly in all languages
+unset LC_ALL
+LC_NUMERIC=C
+export LC_NUMERIC
+
+# all above OK - proceed: set up temporary files
+TMP="`g.tempfile pid=$$`"
+if [ $? -ne 0 ] || [ -z "$TMP" ] ; then
+    echo "ERROR: Unable to create temporary files." 1>&2
+    exit 2
+fi
+rm -f $TMP
+PROG=`basename $0 | sed 's/\./_/g'`
+NOW=$(date +"%F-%X")
+LOGFILE="$PROG-$NOW.log"
+
+
+#cleanup procedure
+cleanup()
+{
+  \rm -f $TMP
+    rm -f $TMP.${PROG}
+    rm -f $TMP.${PROG}.0
+   for ((u=1;u<=51;u+=1))
+  do
+    rm -f $TMP.${PROG}.$u
+  done
+
+  g.mremove -f vect="$INPUT"_distmp* --q
+  if [ -e ~/$LOGFILE ] && [ ! -s ~/$LOGFILE ] ;then
+		rm -f ~/$LOGFILE
+  fi
+}
+
+# what to do in case of user break:
+exitprocedure()
+{
+  echo -e "\nUser break!"
+  cleanup
+  exit 2
+}
+# shell check for user break (signal list: trap -l)
+trap "exitprocedure" 2 3 15
+
+
+
+#dependancies testing
+if [ ! -x "`which m.testtype`" ];then
+  g.message -e message="m.testtype subscript required, please install it first"
+  exit 2
+fi
+
+if [ ! -x "`which m.pourcenpl`" ];then
+  g.message -e message="m.pourcenpl subscript required, please install it first"
+  exit 2
+fi
+
+if [ ! -x "`which m.tripl`" ];then
+  g.message -e message="m.tripl subscript required, please install it first"
+  exit 2
+fi
+
+## end step1 : dependancies tests ##
+
+## begin step2 : parameters tests ##
+
+#test if output vector map already exists
+eval `g.findfile element=vector file="$OUTPUT" `
+if [ "$file" ] ; then
+  if [ -z "$GRASS_OVERWRITE" ] || [ "$GRASS_OVERWRITE" -eq 0 ]; then
+    g.message -w message="<$OUTPUT> already exists in this mapset or in another mapset of this location. Use the --o flag to overwrite." 1>&2
+    exit 2
+  else
+    g.message -w message="<$OUTPUT>  already exists and will be overwritten"
+  fi
+fi
+
+
+#test if OUTPUT vector name is allowed
+v.in.region output=$OUTPUT --q  |grep -v "SQL" 2>$TMP.${PROG}.50
+	
+if [ -s "$TMP.${PROG}.50" ];then
+	g.message -w message="Illegal vector map name <$OUTPUT>" 1>&2
+    exit 2
+else
+	g.remove vect=$OUTPUT --q  
+fi
+
+#test if input temporary vector map already exist
+g.mlist type=vect pattern="$INPUT"_distmp*  > $TMP.${PROG}
+if [ -s "$TMP.${PROG}" ];then
+  g.message -w message="<$INPUT>_distmp name for temporay file is already used in this mapset or in another mapset of this location"
+  cleanup
+  exit 2
+
+fi
+
+#test if input vector map exists
+g.findfile element=vector mapset=${MAPSET?} file=${INPUT} > /dev/null
+if [ $? -ne 0 ] ; then
+  g.message -w  message="<$INPUT> not found"
+  cleanup
+   exit 2
+fi
+
+
+m.testtype input=$INPUT > $TMP.${PROG}.1
+#if input vector map is not a line vector, exit program
+if [ "`cat $TMP.${PROG}.1`" != "line" ] ; then
+  g.message -e message="<$INPUT> isn't a vector line"
+  cleanup
+  exit 2
+fi
+
+#test on LENGTH value
+if [ "`echo $LENGTH |grep "[[:digit:]]" | wc -c`" = "0"  ] ;then
+  g.message -e message="<LENGTH> value isn't numeric"
+  cleanup
+  exit 2
+fi
+
+if [ "`echo $LENGTH |grep "[[:alpha:]]" | wc -c`" != "0" ] ;then
+	g.message -e message="<LENGTH> value isn't numeric !!"
+	cleanup
+	exit 2
+fi
+
+
+#test on UNIT value
+if [ -z "$UNIT" ];then
+  UNIT=me
+fi
+
+
+#test on COLUMNP and VALUEP values
+if [ -n "$COLUMNP" ];then
+  
+  db.columns table="$INPUT" |grep "^$COLUMNP$" > $TMP.${PROG}.2
+  
+  if [ ! -s "$TMP.${PROG}.2" ]; then
+    g.message -w message="Column <$COLUMNP> not found"
+    cleanup
+    exit 2
+  fi
+
+  if [ ! -n "$VALUEP" ];then
+    g.message -w message="<$VALUEP> not found"
+    cleanup
+    exit 2
+  fi
+  #test if VALUEP is valid
+  if [ "`echo $VALUEP |grep "[[:digit:]]" | wc -c`" = "0"  ] ;then
+    v.db.select -c map=$INPUT column=$COLUMNP where="$COLUMNP = '$VALUEP'" --q > $TMP.${PROG}.0
+  else
+    v.db.select -c map=$INPUT column=$COLUMNP where="$COLUMNP = $VALUEP"  --q > $TMP.${PROG}.0
+  fi
+  if [ ! -s "$TMP.${PROG}.0" ];then
+    g.message -w message="<$VALUEP> not found"
+    cleanup
+    exit 2
+  fi
+fi
+
+## end step2 : parameters tests ##
+g.copy vect=$INPUT,"$INPUT"_distmp --q 2>>~/$LOGFILE
+
+#adding a column for the features to protect
+#example : line with length inferior to the threshold but we want to protect it
+
+
+## begin step3 : column ELIMNO creation ##
+################## creation of the column ELIMNO ***************
+#adding the column $ELIMNO
+
+
+db.columns table="$INPUT"_distmp --q > $TMP.${PROG}.3 2>>~/$LOGFILE
+grep "^elimno$" $TMP.${PROG}.3 > $TMP.${PROG}.4 2>>~/$LOGFILE
+
+typeset -i NBELIMNO
+NBELIMNO=1
+while [ -s "$TMP.${PROG}.4" ] ; do
+  grep "^elimno"$NBELIMNO"$" $TMP.${PROG}.3 > $TMP.${PROG}.4 2>>~/$LOGFILE
+  NBELIMNO=$NBELIMNO+1
+  
+done
+ELIMNO=elimno"$NBELIMNO"
+v.db.addcol map="$INPUT"_distmp columns="$ELIMNO INTEGER" --q 2>>~/$LOGFILE
+
+#updating the column ELIMNO at 0 for all the lines
+#if ELIMNO = 1 , line need to be protected
+
+v.db.update map="$INPUT"_distmp layer=1 column=$ELIMNO value=0 --q 2>>~/$LOGFILE
+
+
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+## end step3 : column ELIMNO creation ##
+
+## begin step4 : length calculation ##
+# adding the column COLUMN : suppress and re-create
+COLERASE=`v.info -c map="$INPUT"_distmp |cut -d"|" -f2|grep "^[Ll][Ee][Nn][Gg][Tt][Hh]$"`
+COLUMN=LENGTH
+
+v.db.dropcol map="$INPUT"_distmp column=$COLERASE --q 2>/dev/null
+v.db.addcol map="$INPUT"_distmp columns="$COLUMN DOUBLE PRECISION" --q 2>>~/$LOGFILE
+
+
+#length calculation
+
+v.to.db map="$INPUT"_distmp type=line option=length units=$UNIT column=$COLUMN  --q 2>>~/$LOGFILE
+
+## end step4 : length calculation ##
+
+## begin step5 : null length research ##
+
+#reseach of null length
+v.db.select -c map="$INPUT"_distmp layer=1 column=cat where="$COLUMN =0 "   > $TMP.${PROG}.51 2>>~/$LOGFILE
+if [ -s "$TMP.${PROG}.51" ];then
+  g.message -w message="Some line have null value" 
+  g.message message="Please check the following cat line:" 
+  g.message message="`cat $TMP.${PROG}.51`"
+  cleanup
+  exit 2
+fi
+
+## end step5 : null length research ##
+
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+
+
+
+
+
+
+# verification that INPUT_distmp contains lines with length inferior to the threshold and with ELIMNO = 0
+#extraction of these lines
+
+v.db.select -c map="$INPUT"_distmp layer=1 column=cat where="$COLUMN < $LENGTH AND $ELIMNO = 0" nv=0 fs="|"  --q > $TMP.${PROG}.5 2>>~/$LOGFILE
+v.extract input="$INPUT"_distmp output="$INPUT"_distmp2 type=line file=$TMP.${PROG}.5  --q 2>>~/$LOGFILE
+rm -f $TMP.${PROG}.5
+
+
+m.testtype input="$INPUT"_distmp2 > $TMP.${PROG}.6 2>>~/$LOGFILE
+resulttype=`cat $TMP.${PROG}.6`
+rm -f $TMP.${PROG}.6
+
+#if "$INPUT"_distmp2 has no features, exit program
+if [ "$resulttype" != "line" ] ; then
+ g.message -e message="There are no lines which length is inferior to $LENGTH "$UNIT" in the vector $INPUT"
+  cleanup
+  exit 0
+fi
+
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+## begin step5 : flag I ##
+#if flag I, informations for the user
+if [ $GIS_FLAG_I -eq 1 ]
+then
+	# indications for the user about his choice
+    # feature numbers and percentage value
+  
+  v.info map="$INPUT"_distmp | grep "lines:" | cut -c30-40 > $TMP.${PROG}.7 2>>~/$LOGFILE
+  typeset -i lines5
+  lines5=`cat $TMP.${PROG}.7`
+  rm -f $TMP.${PROG}.7
+
+  v.info map="$INPUT"_distmp2 | grep "lines:" | cut -c30-40 > $TMP.${PROG}.8 2>>~/$LOGFILE
+  typeset -i lines3
+  lines3=`cat $TMP.${PROG}.8`
+  rm -f $TMP.${PROG}.8
+
+
+  v.report map="$INPUT"_distmp option=length units=$UNIT | awk -F'|' '{print $NF}' > $TMP.${PROG}.9 2>>~/$LOGFILE
+  wc -l $TMP.${PROG}.9 | cut -d" " -f1 > $TMP.${PROG}.10 2>>~/$LOGFILE
+  typeset -i col1
+  col1=`cat $TMP.${PROG}.10`-1
+  tail -n $col1 $TMP.${PROG}.9 > $TMP.${PROG}.11 2>>~/$LOGFILE
+  cat $TMP.${PROG}.11 | tr -s '\n' > $TMP.${PROG}.12 2>>~/$LOGFILE
+
+  v.report map="$INPUT"_distmp2 option=length units=$UNIT | awk -F'|' '{print $NF}' > $TMP.${PROG}.13 2>>~/$LOGFILE
+  wc -l $TMP.${PROG}.13 | cut -d" " -f1 > $TMP.${PROG}.14 2>>~/$LOGFILE
+  typeset -i col3
+  col3=`cat $TMP.${PROG}.14`-1
+  tail -n $col3 $TMP.${PROG}.13 > $TMP.${PROG}.15 2>>~/$LOGFILE
+  cat $TMP.${PROG}.15 | tr -s '\n' > $TMP.${PROG}.16 2>>~/$LOGFILE
+	if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+	fi
+  
+  echo "You choose a minimum length of $LENGTH $UNIT"
+  echo " For the vector $INPUT, "
+  echo "the dissolving small linear entities operation will work"
+  echo " on $lines3 lines for $lines5 total lines"
+
+	# call Pourcen.pl script for percentage calculation 
+    m.pourcenpl --input1=$TMP.${PROG}.12 --input2=$TMP.${PROG}.16 2>>~/$LOGFILE
+  
+  echo " of the total length"
+  
+  cleanup
+  exit 0
+fi
+## end step5 : flag I ##
+
+#removing dangles which length is inferior to the threshold
+# and updating the attribute table
+v.clean input="$INPUT"_distmp output="$INPUT"_distmp3 type=line tool=rmdangle thresh=$LENGTH --q 2>>~/$LOGFILE
+
+v.category input="$INPUT"_distmp3 type=line option=print  > $TMP.${PROG}.17 2>>~/$LOGFILE
+
+v.extract input="$INPUT"_distmp3 output="$INPUT"_distmp4 file=$TMP.${PROG}.17  --q 2>>~/$LOGFILE
+
+rm -f $TMP.${PROG}.17
+g.remove vect="$INPUT"_distmp3 --q 2>>~/$LOGFILE
+
+#verification that INPUT_distmp4 contains  lines with length inferior to the threshold and with ELIMNO = 0
+v.extract input="$INPUT"_distmp4 output="$INPUT"_distmp5 type=line where="$COLUMN < $LENGTH AND $ELIMNO = 0"  --q 2>>~/$LOGFILE
+m.testtype input="$INPUT"_distmp5 > $TMP.${PROG}.18 2>>~/$LOGFILE
+resulttype2=`cat $TMP.${PROG}.18`
+rm -f $TMP.${PROG}.18
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+#if "$INPUT"_distmp5 has no features, exit program
+if [ "$resulttype2" != "line" ] ; then
+	cleanup
+	exit 0
+fi
+
+v.info map="$INPUT"_distmp5 | grep "lines:" | cut -c30-40 > $TMP.${PROG}.19 2>>~/$LOGFILE
+typeset -i line2
+line2=`cat $TMP.${PROG}.19`
+rm -f $TMP.${PROG}.19
+
+g.remove vect="$INPUT"_distmp5 --q 2>>~/$LOGFILE
+
+#################################################################
+############ begin of the iterative process ###############################
+ 
+
+  v.to.db map="$INPUT"_distmp4 type=line option=length units=$UNIT column=$COLUMN --q 2>>~/$LOGFILE
+  echo " SELECT * FROM "$INPUT"_distmp4 WHERE $COLUMN < $LENGTH AND $ELIMNO = 0" |db.select -c > $TMP.${PROG}.20 2>>~/$LOGFILE
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+  
+typeset -i wnb
+wnb=1
+
+while [ -s "$TMP.${PROG}.20" ] ;do
+  echo " " 
+  echo " *** Step $wnb *** "
+  echo " " 
+	# extraction of the lines with length < threshold and ELIMNO = 0
+    v.db.select -c map="$INPUT"_distmp4 column=cat,$COLUMN  where="$COLUMN < $LENGTH AND $ELIMNO = 0" fs=" " nv=0  --q > $TMP.${PROG}.21 2>>~/$LOGFILE
+	
+	#sort of the concerned lines	
+    m.tripl --input=$TMP.${PROG}.21 --output=$TMP.${PROG}.22 --col=1 2>>~/$LOGFILE
+    head -n 1 $TMP.${PROG}.22 |cut -d" " -f1 > $TMP.${PROG}.23 2>>~/$LOGFILE
+
+    # $TMP.${PROG}.23 contains the line category concerned by the merging operation
+    catseg=`cat $TMP.${PROG}.23`
+    #neighbour identification , v.net topoogy management
+    v.net -c input="$INPUT"_distmp4 output="$INPUT"_distmp6 operation=nodes --q 2>>~/$LOGFILE
+    #$TMP.${PROG}.24: point_category line_category[,line_category...
+    v.net input="$INPUT"_distmp6 operation=nreport > $TMP.${PROG}.24 2>>~/$LOGFILE
+    #$TMP.${PROG}.25: line_category start_point_category end_point_category
+    v.net input="$INPUT"_distmp6 operation=report > $TMP.${PROG}.25 2>>~/$LOGFILE
+
+	# nodes segment identification
+     
+    awk -F" " < $TMP.${PROG}.25 '$1=='$catseg''>$TMP.${PROG}.26 2>>~/$LOGFILE
+    
+    #for each node, identification of the line neighbours
+    #first node
+    cut -d " " -f2 $TMP.${PROG}.26 > $TMP.${PROG}.27 2>>~/$LOGFILE
+    node1=`cat $TMP.${PROG}.27`
+    awk -F" " < $TMP.${PROG}.24 '$1=='$node1''> $TMP.${PROG}.28 2>>~/$LOGFILE
+    cut -d" " -f2 $TMP.${PROG}.28 > $TMP.${PROG}.29 2>>~/$LOGFILE
+    echo "`cat $TMP.${PROG}.29`" | awk -F"," '{ OFS = "\n" ; ORS = "\n"; $1 = $1; print $0 }' > $TMP.${PROG}.30 2>>~/$LOGFILE
+    awk -F" " < $TMP.${PROG}.30 '$1!='$catseg''>$TMP.${PROG}.31 2>>~/$LOGFILE
+    wc -l $TMP.${PROG}.31 |cut -d" " -f1 > $TMP.${PROG}.32 2>>~/$LOGFILE
+
+	if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+	fi
+    
+	# if $TMP.${PROG}.32 equal at 1, only one neighbour , otherwise confluence presence
+    #in this case no possible merge
+     if [ "`cat $TMP.${PROG}.32`" = "1" ];then
+      echo "`cat $TMP.${PROG}.31`" > $TMP.${PROG}.33 2>>~/$LOGFILE
+     fi
+    # $TMP.${PROG}.33 contains the line category to merge
+    
+    #second node
+    cut -d " " -f3 $TMP.${PROG}.26 > $TMP.${PROG}.34 2>>~/$LOGFILE
+    node2=`cat $TMP.${PROG}.34`
+    awk -F" " < $TMP.${PROG}.24 '$1=='$node2''> $TMP.${PROG}.35 2>>~/$LOGFILE
+    cut -d" " -f2 $TMP.${PROG}.35 > $TMP.${PROG}.36 2>>~/$LOGFILE
+    echo "`cat $TMP.${PROG}.36`" | awk -F"," '{ OFS = "\n" ; ORS = "\n"; $1 = $1; print $0 }' > $TMP.${PROG}.37 2>>~/$LOGFILE
+    awk -F" " < $TMP.${PROG}.37 '$1!='$catseg''>$TMP.${PROG}.38 2>>~/$LOGFILE
+    wc -l $TMP.${PROG}.38 |cut -d" " -f1 > $TMP.${PROG}.39 2>>~/$LOGFILE
+
+	#if $TMP.${PROG}.39 equal to 1, only one neighbour , otherwise confluence presence
+    #in this case no possible merge
+     if [ "`cat $TMP.${PROG}.39`" = "1" ];then
+      echo "`cat $TMP.${PROG}.38`" >> $TMP.${PROG}.33 2>>~/$LOGFILE
+     fi
+
+	if [ ! -z "`cat ~/$LOGFILE`" ];then
+		g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+		cleanup
+		exit 2
+	fi	
+
+
+    # $TMP.${PROG}.33 contains the line category(s) to merge
+
+	# if COLUMNP and VALUEP != 0, verification that the neighbours have the same VALUEP values :
+	# a line with VALUEP = 0 , can only merge to an other line with VALUEP = 0
+	# a line with VALUEP != 0 , can only merge to an other line with VALUEP != 0
+	# if $TMP.${PROG}.33 is not empty, in the case neighbour possibles to merge
+    
+     
+    if [ -s "$TMP.${PROG}.33" ];then
+      if [ -n "$COLUMNP" ];then
+        v.db.select -c map="$INPUT"_distmp4 column=$COLUMNP nv="" where="cat=$catseg"  --q > $TMP.${PROG}.40 2>>~/$LOGFILE
+		# if $TMP.${PROG}.40 != valuep, we keep only neighbour with valuep != 0	
+        if [ "`cat $TMP.${PROG}.40`" != "$VALUEP" ];then
+		  # in 	$TMP.${PROG}.33, we keep only line with valuep != 0
+          
+          for f in `cat $TMP.${PROG}.33`;do
+            v.db.select -c map="$INPUT"_distmp4 column=cat,$COLUMNP nv="" fs="|" where="cat = $f"  --q >> $TMP.${PROG}.41 2>>~/$LOGFILE
+          done
+          echo "\"$VALUEP\""> $TMP.${PROG}.42 2>>~/$LOGFILE
+          awk -F"|" <$TMP.${PROG}.41 '$2!='`cat $TMP.${PROG}.42`''  |cut -d"|" -f1 > $TMP.${PROG}.43 2>>~/$LOGFILE
+          rm -f $TMP.${PROG}.42 
+          #$TMP.${PROG}.43 contains the neighbour line category we must to keep
+          # modification of $TMP.${PROG}.33 if necessary
+          if [ -s "$TMP.${PROG}.43" ] ;then
+            for h in `cat $TMP.${PROG}.43`;do
+              awk -F"|" <$TMP.${PROG}.33 '$1=='$h''   >> $TMP.${PROG}.44 2>>~/$LOGFILE
+            done
+            rm -f $TMP.${PROG}.33
+            mv $TMP.${PROG}.44 $TMP.${PROG}.33 2>>~/$LOGFILE
+          else
+			# if $TMP.${PROG}.43 is empty, no neighbours possible
+            
+            rm -f $TMP.${PROG}.33
+            touch $TMP.${PROG}.33 2>>~/$LOGFILE
+          fi
+                if [ ! -z "`cat ~/$LOGFILE`" ];then
+					g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+					cleanup
+					exit 2
+				fi
+        else
+		# if $TMP.${PROG}.40 = valuep, we keep only neighbour with valuep = 0	
+          
+          # in 	$TMP.${PROG}.33, we keep only line with valuep = 0
+          for l in `cat $TMP.${PROG}.33`;do
+            v.db.select -c map="$INPUT"_distmp4 column=cat,$COLUMNP nv="" fs="|" where="cat = $l"  --q >> $TMP.${PROG}.41 2>>~/$LOGFILE
+          done
+          echo "\"$VALUEP\""> $TMP.${PROG}.42 2>>~/$LOGFILE
+          awk -F"|" <$TMP.${PROG}.41 '$2=='`cat $TMP.${PROG}.42`''  |cut -d"|" -f1 > $TMP.${PROG}.43 2>>~/$LOGFILE
+          rm -f $TMP.${PROG}.42
+           #$TMP.${PROG}.43 contains the neighbour line category we must to keep
+          # modification of $TMP.${PROG}.33 if necessary
+          if [ -s "$TMP.${PROG}.43" ] ;then
+            for m in `cat $TMP.${PROG}.43`;do
+              awk -F"|" <$TMP.${PROG}.33 '$1=='$m''   >> $TMP.${PROG}.44 2>>~/$LOGFILE
+            done
+            rm -f $TMP.${PROG}.33
+            mv $TMP.${PROG}.44 $TMP.${PROG}.33 2>>~/$LOGFILE
+          else
+            # if $TMP.${PROG}.43 is empty, no neighbours possible
+            rm -f $TMP.${PROG}.33
+            touch $TMP.${PROG}.33
+          fi
+        fi
+        rm -f $TMP.${PROG}.40 $TMP.${PROG}.41 $TMP.${PROG}.43 $TMP.${PROG}.44
+      fi
+    fi
+    
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+    # if $TMP.${PROG}.33 is empty, no merge possible, we put ELIMNO = 1 
+ 
+    if [ -s "$TMP.${PROG}.33" ];then
+     
+ 
+		#if $TMP.${PROG}.33 is not empty, choice of the line 
+      
+      v.db.select -c map="$INPUT"_distmp4 column=cat,$COLUMN fs=" " nv=0  --q > $TMP.${PROG}.45 2>>~/$LOGFILE
+  
+      for a in `cat $TMP.${PROG}.33`;do
+        awk -F" " < $TMP.${PROG}.45 '$1=='$a''>> $TMP.${PROG}.46 2>>~/$LOGFILE
+      done
+  
+      #sorting by length
+      m.tripl --input=$TMP.${PROG}.46 --output=$TMP.${PROG}.47 --col=1 2>>~/$LOGFILE
+		#taking the last line
+      
+      tail -n 1 $TMP.${PROG}.47 |cut -d" " -f1 > $TMP.${PROG}.48 2>>~/$LOGFILE
+  
+  
+      g.copy vect="$INPUT"_distmp4,"$INPUT"_distmp7 --q 2>>~/$LOGFILE
+      # merging with v.edit command
+      v.edit map="$INPUT"_distmp7 type=line tool=merge cats=$catseg,`cat $TMP.${PROG}.48` --q 2>>~/$LOGFILE
+  
+      g.copy vect="$INPUT"_distmp7,"$INPUT"_distmp8 --q 2>>~/$LOGFILE
+      v.edit map="$INPUT"_distmp8 tool=catdel cats=$catseg where="cat=$catseg" --q 2>>~/$LOGFILE
+  
+      v.db.connect -d map="$INPUT"_distmp8 2>>~/$LOGFILE
+  
+      rm -f $GISDBASE/$LOCATION_NAME/$MAPSET/dbf/"$INPUT"_distmp8.dbf
+      # suppressing the line in the attribute table
+      db.copy from_table="$INPUT"_distmp7 to_table="$INPUT"_distmp8 where="cat<>$catseg"  --q 2>>~/$LOGFILE
+  
+      v.db.connect map="$INPUT"_distmp8 table="$INPUT"_distmp8 --q 2>>~/$LOGFILE
+		if [ ! -z "`cat ~/$LOGFILE`" ];then
+			g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+			cleanup
+			exit 2
+		fi
+  
+      #temporary files suppression
+      rm -f $TMP.${PROG}.45 $TMP.${PROG}.46 $TMP.${PROG}.47 $TMP.${PROG}.48
+      rm -f $TMP.${PROG}.20
+      g.remove vect="$INPUT"_distmp4,"$INPUT"_distmp7,"$INPUT"_distmp6 --q 2>>~/$LOGFILE
+      g.rename vect="$INPUT"_distmp8,"$INPUT"_distmp4 --q 2>>~/$LOGFILE
+    else
+      v.db.update map="$INPUT"_distmp4 column=$ELIMNO value=1 where="cat=$catseg"  --q 2>>~/$LOGFILE
+      rm -f $TMP.${PROG}.45 $TMP.${PROG}.46 $TMP.${PROG}.47 $TMP.${PROG}.48
+      rm -f $TMP.${PROG}.20
+      g.remove vect="$INPUT"_distmp6 --q 2>>~/$LOGFILE
+ 
+
+    fi
+ 
+
+
+ 
+
+  v.to.db map="$INPUT"_distmp4 type=line option=length units=$UNIT column=$COLUMN --q 2>>~/$LOGFILE
+  echo " SELECT * FROM "$INPUT"_distmp4 WHERE $COLUMN < $LENGTH AND $ELIMNO = 0" |db.select -c > $TMP.${PROG}.20 2>>~/$LOGFILE
+
+  rm -f $TMP.${PROG}.21 $TMP.${PROG}.22 $TMP.${PROG}.23
+  rm -f $TMP.${PROG}.33
+  wnb=$wnb+1
+  
+  if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+ fi
+done
+
+v.db.dropcol map="$INPUT"_distmp4 column=$COLUMN 2>>~/$LOGFILE
+v.db.dropcol map="$INPUT"_distmp4 column=$ELIMNO 2>>~/$LOGFILE
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+g.rename vect="$INPUT"_distmp4,$OUTPUT --q 2>/dev/null
+if [ ! -z "`cat ~/$LOGFILE`" ];then
+	g.message -e message="Errors append during calculation. Check the home/user/$LOGFILE file for details"
+	cleanup
+	exit 2
+fi
+cleanup
+exit 0
+
